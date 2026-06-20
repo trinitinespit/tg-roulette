@@ -16,34 +16,34 @@ app.get("/", (req, res) => {
 });
 
 let queue = [];
-let pair = new Map();
+let paired = new Map();
 
-function removeFromQueue(id) {
+function remove(id) {
   queue = queue.filter(x => x !== id);
 }
 
 function unpair(id) {
-  const partner = pair.get(id);
+  const partner = paired.get(id);
   if (!partner) return;
 
-  pair.delete(id);
-  pair.delete(partner);
+  paired.delete(id);
+  paired.delete(partner);
 
-  io.to(partner).emit("partner_left");
   io.to(id).emit("partner_left");
+  io.to(partner).emit("partner_left");
 }
 
-function matchUsers() {
+function tryMatch() {
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
     if (!a || !b) return;
 
-    const room = a + "#" + b;
+    const room = `${a}#${b}`;
 
-    pair.set(a, b);
-    pair.set(b, a);
+    paired.set(a, b);
+    paired.set(b, a);
 
     io.to(a).emit("matched", { room, initiator: true });
     io.to(b).emit("matched", { room, initiator: false });
@@ -56,33 +56,31 @@ io.on("connection", (socket) => {
   socket.on("find", () => {
     console.log("FIND", socket.id);
 
-    removeFromQueue(socket.id);
     unpair(socket.id);
+    remove(socket.id);
 
     queue.push(socket.id);
+    tryMatch();
+  });
 
-    matchUsers();
+  socket.on("next", () => {
+    unpair(socket.id);
+    remove(socket.id);
+
+    queue.push(socket.id);
+    tryMatch();
   });
 
   socket.on("signal", ({ room, data }) => {
     socket.to(room).emit("signal", data);
   });
 
-  socket.on("next", () => {
-    unpair(socket.id);
-    removeFromQueue(socket.id);
-
-    queue.push(socket.id);
-    matchUsers();
-  });
-
   socket.on("disconnect", () => {
     unpair(socket.id);
-    removeFromQueue(socket.id);
+    remove(socket.id);
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("SERVER RUNNING ON", PORT);
+server.listen(process.env.PORT || 3000, () => {
+  console.log("SERVER RUNNING");
 });
