@@ -17,14 +17,24 @@ app.get("/", (req, res) => {
 let waiting = null;
 
 io.on("connection", (socket) => {
-  console.log("connected", socket.id);
+  console.log("[connect]", socket.id, "| waiting was:", waiting);
 
   socket.on("find", () => {
-    if (waiting && waiting !== socket.id) {
+    console.log("[find] received from", socket.id, "| current waiting:", waiting);
+
+    if (waiting && waiting !== socket.id && io.sockets.sockets.has(waiting)) {
       const a = waiting;
       const b = socket.id;
 
       const room = a + "#" + b;
+
+      // КЛЮЧЕВОЙ ФИКС: оба сокета должны реально войти в комнату,
+      // иначе socket.to(room) в обработчике "signal" будет улетать в пустоту
+      const socketA = io.sockets.sockets.get(a);
+      socketA?.join(room);
+      socket.join(room);
+
+      console.log("[match]", a, "<->", b, "| room:", room);
 
       io.to(a).emit("matched", { room, initiator: true });
       io.to(b).emit("matched", { room, initiator: false });
@@ -32,15 +42,21 @@ io.on("connection", (socket) => {
       waiting = null;
     } else {
       waiting = socket.id;
+      console.log("[waiting] set to", socket.id);
     }
   });
 
   socket.on("signal", ({ room, data }) => {
+    console.log("[signal]", socket.id, "-> room", room, "| keys:", Object.keys(data));
     socket.to(room).emit("signal", data);
   });
 
-  socket.on("disconnect", () => {
-    if (waiting === socket.id) waiting = null;
+  socket.on("disconnect", (reason) => {
+    console.log("[disconnect]", socket.id, "| reason:", reason);
+    if (waiting === socket.id) {
+      waiting = null;
+      console.log("[waiting] cleared, was", socket.id);
+    }
   });
 });
 

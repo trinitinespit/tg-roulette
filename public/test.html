@@ -35,12 +35,23 @@ let room;
 const local = document.getElementById("local");
 const remote = document.getElementById("remote");
 
+socket.on("connect", () => console.log("[client] connected, id =", socket.id));
+socket.on("connect_error", (err) => console.error("[client] connect_error:", err.message));
+socket.on("disconnect", (reason) => console.warn("[client] disconnected:", reason));
+
 document.getElementById("start").onclick = async () => {
-  stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-  local.srcObject = stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    local.srcObject = stream;
+    console.log("[client] got camera/mic stream");
+  } catch (e) {
+    console.error("[client] getUserMedia failed:", e.name, e.message);
+    alert("Не удалось получить доступ к камере/микрофону: " + e.message);
+  }
 };
 
 document.getElementById("find").onclick = () => {
+  console.log("[client] emitting find, socket.connected =", socket.connected);
   socket.emit("find");
 };
 
@@ -77,6 +88,7 @@ function createPeer(initiator) {
 }
 
 socket.on("matched", (data) => {
+  console.log("[client] matched!", data);
   room = data.room;
   createPeer(data.initiator);
 });
