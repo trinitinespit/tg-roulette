@@ -8,6 +8,9 @@
 body { background:#111; color:white; text-align:center; font-family:sans-serif; }
 video { width:45vw; background:black; border-radius:10px; margin:10px; }
 #local { transform: scaleX(-1); }
+#status { font-size:14px; color:#9f9; min-height:20px; margin:8px; }
+button { padding:8px 16px; margin:4px; font-size:16px; }
+button:disabled { opacity:0.4; }
 </style>
 </head>
 
@@ -16,7 +19,9 @@ video { width:45vw; background:black; border-radius:10px; margin:10px; }
 <h2>Video Chat</h2>
 
 <button id="start">Start</button>
-<button id="find">Find</button>
+<button id="find" disabled>Find</button>
+
+<div id="status">Нажми Start, чтобы включить камеру</div>
 
 <div>
   <video id="local" autoplay muted playsinline></video>
@@ -34,28 +39,62 @@ let room;
 
 const local = document.getElementById("local");
 const remote = document.getElementById("remote");
+const statusEl = document.getElementById("status");
+const startBtn = document.getElementById("start");
+const findBtn = document.getElementById("find");
+
+function setStatus(text, isError) {
+  statusEl.textContent = text;
+  statusEl.style.color = isError ? "#f55" : "#9f9";
+  console.log("[status]", text);
+}
 
 socket.on("connect", () => console.log("[client] connected, id =", socket.id));
-socket.on("connect_error", (err) => console.error("[client] connect_error:", err.message));
-socket.on("disconnect", (reason) => console.warn("[client] disconnected:", reason));
+socket.on("connect_error", (err) => {
+  console.error("[client] connect_error:", err.message);
+  setStatus("Ошибка соединения с сервером: " + err.message, true);
+});
+socket.on("disconnect", (reason) => {
+  console.warn("[client] disconnected:", reason);
+  setStatus("Соединение с сервером разорвано: " + reason, true);
+});
 
-document.getElementById("start").onclick = async () => {
+startBtn.onclick = async () => {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
     local.srcObject = stream;
     console.log("[client] got camera/mic stream");
+    setStatus("Камера готова. Можно искать собеседника.");
+    findBtn.disabled = false;
+    startBtn.disabled = true;
   } catch (e) {
     console.error("[client] getUserMedia failed:", e.name, e.message);
-    alert("Не удалось получить доступ к камере/микрофону: " + e.message);
+    setStatus("Не удалось получить доступ к камере/микрофону: " + e.message, true);
   }
 };
 
-document.getElementById("find").onclick = () => {
+findBtn.onclick = () => {
+  if (!stream) {
+    setStatus("Сначала нажми Start — камера не включена", true);
+    return;
+  }
   console.log("[client] emitting find, socket.connected =", socket.connected);
+  setStatus("Ищем собеседника...");
+  findBtn.disabled = true;
   socket.emit("find");
 };
 
+function cleanupPeer() {
+  if (pc) {
+    pc.close();
+    pc = null;
+  }
+  remote.srcObject = null;
+}
+
 function createPeer(initiator) {
+  console.log("[client] creating RTCPeerConnection, initiator =", initiator);
+
   pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   });
@@ -63,7 +102,18 @@ function createPeer(initiator) {
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
   pc.ontrack = (e) => {
+    console.log("[client] ontrack fired, streams:", e.streams.length);
     remote.srcObject = e.streams[0];
+    setStatus("Видео собеседника подключено!");
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    console.log("[client] iceConnectionState:", pc.iceConnectionState);
+    if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+      setStatus("Соединение установлено!");
+    } else if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
+      setStatus("Соединение прервано (" + pc.iceConnectionState + ")", true);
+    }
   };
 
   pc.onicecandidate = (e) => {
@@ -83,36 +133,64 @@ function createPeer(initiator) {
           room,
           data: { offer: pc.localDescription }
         });
+      })
+      .catch(e => {
+        console.error("[client] createOffer/setLocalDescription failed:", e);
+        setStatus("Ошибка создания offer: " + e.message, true);
       });
   }
 }
 
 socket.on("matched", (data) => {
   console.log("[client] matched!", data);
+
+  if (!stream) {
+    console.error("[client] matched but no local stream available!");
+    setStatus("Матч найден, но камера не была включена. Обновите страницу и нажмите Start заново.", true);
+    return;
+  }
+
+  setStatus("Собеседник найден, устанавливаем соединение...");
   room = data.room;
-  createPeer(data.initiator);
+
+  try {
+    createPeer(data.initiator);
+  } catch (e) {
+    console.error("[client] createPeer threw:", e);
+    setStatus("Ошибка при создании соединения: " + e.message, true);
+  }
 });
 
 socket.on("signal", async (data) => {
-  if (!pc) return;
-
-  if (data.offer) {
-    await pc.setRemoteDescription(data.offer);
-    const ans = await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-
-    socket.emit("signal", {
-      room,
-      data: { answer: pc.localDescription }
-    });
+  if (!pc) {
+    console.warn("[client] signal received but no pc yet", data);
+    return;
   }
 
-  if (data.answer) {
-    await pc.setRemoteDescription(data.answer);
-  }
+  try {
+    if (data.offer) {
+      await pc.setRemoteDescription(data.offer);
+      const ans = await pc.createAnswer();
+      await pc.setLocalDescription(ans);
 
-  if (data.candidate) {
-    try { await pc.addIceCandidate(data.candidate); } catch(e){}
+      socket.emit("signal", {
+        room,
+        data: { answer: pc.localDescription }
+      });
+    }
+
+    if (data.answer) {
+      await pc.setRemoteDescription(data.answer);
+    }
+
+    if (data.candidate) {
+      try { await pc.addIceCandidate(data.candidate); } catch(e) {
+        console.warn("[client] addIceCandidate failed:", e.message);
+      }
+    }
+  } catch (e) {
+    console.error("[client] signal handling failed:", e);
+    setStatus("Ошибка обработки сигнала: " + e.message, true);
   }
 });
 </script>
