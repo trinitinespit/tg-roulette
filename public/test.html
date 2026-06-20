@@ -2,195 +2,56 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Video Chat</title>
-
-<style>
-body {
-  margin:0;
-  background:#111;
-  color:white;
-  font-family:sans-serif;
-  text-align:center;
-}
-
-h2 {
-  margin-top:10px;
-}
-
-.wrap {
-  display:flex;
-  justify-content:center;
-  gap:20px;
-  margin-top:20px;
-  flex-wrap:wrap;
-}
-
-video {
-  width:45vw;
-  max-width:500px;
-  aspect-ratio:16/9;
-  background:black;
-  border-radius:10px;
-  object-fit:cover;
-}
-
-/* только локалка зеркалится */
-#local {
-  transform: scaleX(-1);
-}
-
-button {
-  margin:5px;
-  padding:10px 15px;
-  cursor:pointer;
-}
-
-#overlay {
-  position:fixed;
-  inset:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:rgba(0,0,0,0.6);
-  font-size:22px;
-}
-
-.hidden {
-  display:none;
-}
-</style>
+<title>Fix</title>
 </head>
 
 <body>
 
-<h2>Video Roulette</h2>
+<h2>TEST</h2>
 
-<button id="start">Start camera</button>
-<button id="find">Find partner</button>
+<button id="start">Start</button>
+<button id="find">Find</button>
 <button id="next">Next</button>
 
-<div class="wrap">
-  <video id="local" autoplay muted playsinline></video>
-  <video id="remote" autoplay playsinline></video>
-</div>
-
-<div id="overlay" class="hidden">Searching...</div>
+<video id="local" autoplay muted playsinline></video>
+<video id="remote" autoplay playsinline></video>
 
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
+console.log("SCRIPT LOADED");
+
 const socket = io();
 
-let stream = null;
-let pc = null;
-let room = null;
-
-const local = document.getElementById("local");
-const remote = document.getElementById("remote");
-const overlay = document.getElementById("overlay");
-
-function setSearching(v){
-  overlay.classList.toggle("hidden", !v);
-}
+let stream;
 
 document.getElementById("start").onclick = async () => {
+  console.log("START CLICK");
+
   stream = await navigator.mediaDevices.getUserMedia({
     video:true,
     audio:true
   });
 
-  local.srcObject = stream;
+  document.getElementById("local").srcObject = stream;
 };
 
 document.getElementById("find").onclick = () => {
-  if (!stream) {
-    alert("Сначала включи камеру");
-    return;
-  }
-
-  remote.srcObject = null;
-  setSearching(true);
-
+  console.log("FIND CLICK");
   socket.emit("find");
 };
 
 document.getElementById("next").onclick = () => {
-  if (pc) pc.close();
-  pc = null;
-
-  remote.srcObject = null;
-  setSearching(true);
-
+  console.log("NEXT CLICK");
   socket.emit("find");
 };
 
-function createPeer(initiator) {
-  pc = new RTCPeerConnection({
-    iceServers:[{urls:"stun:stun.l.google.com:19302"}]
-  });
-
-  stream.getTracks().forEach(t => pc.addTrack(t, stream));
-
-  pc.ontrack = (e) => {
-    remote.srcObject = e.streams[0];
-    setSearching(false);
-  };
-
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      socket.emit("signal", {
-        room,
-        data:{candidate:e.candidate}
-      });
-    }
-  };
-
-  if (initiator) {
-    pc.createOffer()
-      .then(o => pc.setLocalDescription(o))
-      .then(() => {
-        socket.emit("signal", {
-          room,
-          data:{offer:pc.localDescription}
-        });
-      });
-  }
-}
-
-socket.on("matched", (data) => {
-  room = data.room;
-
-  if (!stream) {
-    console.log("WAIT CAMERA");
-    return;
-  }
-
-  createPeer(data.initiator);
+socket.on("connect", () => {
+  console.log("SOCKET CONNECTED");
 });
 
-socket.on("signal", async (data) => {
-  if (!pc) return;
-
-  if (data.offer) {
-    await pc.setRemoteDescription(data.offer);
-    const ans = await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-
-    socket.emit("signal", {
-      room,
-      data:{answer:pc.localDescription}
-    });
-  }
-
-  if (data.answer) {
-    await pc.setRemoteDescription(data.answer);
-  }
-
-  if (data.candidate) {
-    try {
-      await pc.addIceCandidate(data.candidate);
-    } catch(e){}
-  }
+socket.on("matched", (data) => {
+  console.log("MATCHED:", data);
 });
 </script>
 
