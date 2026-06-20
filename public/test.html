@@ -93,6 +93,144 @@ button {
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
+const socket = io(window.location.origin);
+
+let stream;
+let pc;
+let room;
+
+const local = document.getElementById("local");
+const remote = document.getElementById("remote");
+const overlay = document.getElementById("overlay");
+
+function setSearching(v) {
+  overlay.classList.toggle("hidden", !v);
+}
+
+document.getElementById("start").onclick = async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true
+    });
+
+    local.srcObject = stream;
+    console.log("CAMERA READY");
+  } catch (e) {
+    console.error("CAMERA ERROR", e);
+  }
+};
+
+document.getElementById("find").onclick = () => {
+  if (!stream) {
+    alert("Сначала включи камеру");
+    return;
+  }
+
+  console.log("FIND CLICKED");
+  setSearching(true);
+  socket.emit("find");
+};
+
+document.getElementById("next").onclick = () => {
+  if (pc) pc.close();
+  pc = null;
+  remote.srcObject = null;
+
+  setSearching(true);
+  socket.emit("next");
+};
+
+function createPeer(initiator) {
+  console.log("CREATE PEER", initiator);
+
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  });
+
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+  pc.ontrack = (e) => {
+    console.log("REMOTE STREAM");
+    remote.srcObject = e.streams[0];
+    setSearching(false);
+  };
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      socket.emit("signal", {
+        room,
+        data: { candidate: e.candidate }
+      });
+    }
+  };
+
+  if (initiator) {
+    pc.createOffer()
+      .then(o => pc.setLocalDescription(o))
+      .then(() => {
+        socket.emit("signal", {
+          room,
+          data: { offer: pc.localDescription }
+        });
+      });
+  }
+}
+
+socket.on("connect", () => {
+  console.log("SOCKET CONNECTED");
+});
+
+socket.on("matched", (data) => {
+  console.log("MATCHED RECEIVED", data);
+
+  room = data.room;
+
+  if (!stream) {
+    console.log("NO STREAM - WAITING");
+    return;
+  }
+
+  createPeer(data.initiator);
+});
+
+socket.on("signal", async (data) => {
+  if (!pc) return;
+
+  if (data.offer) {
+    await pc.setRemoteDescription(data.offer);
+    const ans = await pc.createAnswer();
+    await pc.setLocalDescription(ans);
+
+    socket.emit("signal", {
+      room,
+      data: { answer: pc.localDescription }
+    });
+  }
+
+  if (data.answer) {
+    await pc.setRemoteDescription(data.answer);
+  }
+
+  if (data.candidate) {
+    try {
+      await pc.addIceCandidate(data.candidate);
+    } catch (e) {
+      console.log("ICE ERROR", e);
+    }
+  }
+});
+
+socket.on("partner_left", () => {
+  console.log("PARTNER LEFT");
+
+  if (pc) pc.close();
+  pc = null;
+  remote.srcObject = null;
+
+  setSearching(true);
+});
+</script>
 const socket = io();
 
 let stream;
