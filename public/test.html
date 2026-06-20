@@ -35,6 +35,7 @@ video {
 
 .remote-wrapper {
   position:relative;
+  display:inline-block;
 }
 
 .overlay {
@@ -83,9 +84,11 @@ button {
 
   <div class="remote-wrapper">
     <video id="remote" autoplay playsinline></video>
+
     <div id="overlay" class="overlay hidden">
       Searching<span class="dots"></span>
     </div>
+
   </div>
 
 </div>
@@ -95,9 +98,9 @@ button {
 <script>
 const socket = io(window.location.origin);
 
-let stream;
-let pc;
-let room;
+let stream = null;
+let pc = null;
+let room = null;
 
 const local = document.getElementById("local");
 const remote = document.getElementById("remote");
@@ -123,11 +126,10 @@ document.getElementById("start").onclick = async () => {
 
 document.getElementById("find").onclick = () => {
   if (!stream) {
-    alert("Сначала включи камеру");
+    alert("Сначала нажми Start");
     return;
   }
 
-  console.log("FIND CLICKED");
   setSearching(true);
   socket.emit("find");
 };
@@ -142,16 +144,15 @@ document.getElementById("next").onclick = () => {
 };
 
 function createPeer(initiator) {
-  console.log("CREATE PEER", initiator);
-
   pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" }
+    ]
   });
 
-  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+  stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
   pc.ontrack = (e) => {
-    console.log("REMOTE STREAM");
     remote.srcObject = e.streams[0];
     setSearching(false);
   };
@@ -187,7 +188,7 @@ socket.on("matched", (data) => {
   room = data.room;
 
   if (!stream) {
-    console.log("NO STREAM - WAITING");
+    console.log("NO STREAM YET");
     return;
   }
 
@@ -222,118 +223,10 @@ socket.on("signal", async (data) => {
 });
 
 socket.on("partner_left", () => {
-  console.log("PARTNER LEFT");
-
   if (pc) pc.close();
   pc = null;
   remote.srcObject = null;
-
   setSearching(true);
-});
-</script>
-const socket = io();
-
-let stream;
-let pc;
-let room;
-
-const local = document.getElementById("local");
-const remote = document.getElementById("remote");
-const overlay = document.getElementById("overlay");
-
-function searching(on) {
-  overlay.classList.toggle("hidden", !on);
-}
-
-document.getElementById("start").onclick = async () => {
-  stream = await navigator.mediaDevices.getUserMedia({
-    video:true,
-    audio:true
-  });
-
-  local.srcObject = stream;
-};
-
-document.getElementById("find").onclick = () => {
-  searching(true);
-  socket.emit("find");
-};
-
-document.getElementById("next").onclick = () => {
-  if (pc) pc.close();
-  pc = null;
-  remote.srcObject = null;
-
-  searching(true);
-  socket.emit("next");
-};
-
-function createPeer(initiator) {
-  pc = new RTCPeerConnection({
-    iceServers:[{urls:"stun:stun.l.google.com:19302"}]
-  });
-
-  stream.getTracks().forEach(t => pc.addTrack(t, stream));
-
-  pc.ontrack = e => {
-    remote.srcObject = e.streams[0];
-    searching(false);
-  };
-
-  pc.onicecandidate = e => {
-    if (e.candidate) {
-      socket.emit("signal", {
-        room,
-        data:{candidate:e.candidate}
-      });
-    }
-  };
-
-  if (initiator) {
-    pc.createOffer()
-      .then(o => pc.setLocalDescription(o))
-      .then(() => {
-        socket.emit("signal", {
-          room,
-          data:{offer:pc.localDescription}
-        });
-      });
-  }
-}
-
-socket.on("matched", data => {
-  room = data.room;
-  createPeer(data.initiator);
-});
-
-socket.on("signal", async data => {
-  if (!pc) return;
-
-  if (data.offer) {
-    await pc.setRemoteDescription(data.offer);
-    const ans = await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-
-    socket.emit("signal", {
-      room,
-      data:{answer:pc.localDescription}
-    });
-  }
-
-  if (data.answer) {
-    await pc.setRemoteDescription(data.answer);
-  }
-
-  if (data.candidate) {
-    try { await pc.addIceCandidate(data.candidate); } catch {}
-  }
-});
-
-socket.on("partner_left", () => {
-  if (pc) pc.close();
-  pc = null;
-  remote.srcObject = null;
-  searching(true);
 });
 </script>
 
