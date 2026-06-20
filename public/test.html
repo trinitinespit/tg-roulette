@@ -2,56 +2,184 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Fix</title>
+<title>Video Roulette FIX</title>
+
+<style>
+body {
+  margin:0;
+  background:#111;
+  color:#fff;
+  font-family:sans-serif;
+  text-align:center;
+}
+
+.wrap {
+  display:flex;
+  justify-content:center;
+  gap:20px;
+  margin-top:20px;
+  flex-wrap:wrap;
+}
+
+video {
+  width:45vw;
+  max-width:500px;
+  aspect-ratio:16/9;
+  background:black;
+  border-radius:10px;
+  object-fit:cover;
+}
+
+#local {
+  transform: scaleX(-1);
+}
+
+button {
+  margin:5px;
+  padding:10px 15px;
+}
+
+#overlay {
+  position:fixed;
+  inset:0;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  background:rgba(0,0,0,0.6);
+  font-size:22px;
+}
+
+.hidden {
+  display:none;
+}
+</style>
 </head>
 
 <body>
 
-<h2>TEST</h2>
+<h2>Video Roulette</h2>
 
 <button id="start">Start</button>
 <button id="find">Find</button>
 <button id="next">Next</button>
 
-<video id="local" autoplay muted playsinline></video>
-<video id="remote" autoplay playsinline></video>
+<div class="wrap">
+  <video id="local" autoplay muted playsinline></video>
+  <video id="remote" autoplay playsinline></video>
+</div>
+
+<div id="overlay" class="hidden">Searching...</div>
 
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
-console.log("SCRIPT LOADED");
-
 const socket = io();
 
-let stream;
+let stream = null;
+let pc = null;
+let room = null;
+let ready = false;
+
+const local = document.getElementById("local");
+const remote = document.getElementById("remote");
+const overlay = document.getElementById("overlay");
+
+function show(v){
+  overlay.classList.toggle("hidden", !v);
+}
 
 document.getElementById("start").onclick = async () => {
-  console.log("START CLICK");
-
   stream = await navigator.mediaDevices.getUserMedia({
     video:true,
     audio:true
   });
 
-  document.getElementById("local").srcObject = stream;
+  local.srcObject = stream;
+  ready = true;
 };
 
 document.getElementById("find").onclick = () => {
-  console.log("FIND CLICK");
+  if (!ready) return alert("Start camera first");
+
+  show(true);
   socket.emit("find");
 };
 
 document.getElementById("next").onclick = () => {
-  console.log("NEXT CLICK");
+  if (pc) pc.close();
+  pc = null;
+  remote.srcObject = null;
+
+  show(true);
   socket.emit("find");
 };
 
-socket.on("connect", () => {
-  console.log("SOCKET CONNECTED");
-});
+function createPeer(initiator) {
+  pc = new RTCPeerConnection({
+    iceServers:[{urls:"stun:stun.l.google.com:19302"}]
+  });
+
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+
+  pc.ontrack = (e) => {
+    remote.srcObject = e.streams[0];
+    show(false);
+  };
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      socket.emit("signal", {
+        room,
+        data:{candidate:e.candidate}
+      });
+    }
+  };
+
+  (async () => {
+    if (initiator) {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket.emit("signal", {
+        room,
+        data:{offer:pc.localDescription}
+      });
+    }
+  })();
+}
 
 socket.on("matched", (data) => {
-  console.log("MATCHED:", data);
+  room = data.room;
+
+  if (!ready) return;
+
+  createPeer(data.initiator);
+});
+
+socket.on("signal", async (data) => {
+  if (!pc) return;
+
+  if (data.offer) {
+    await pc.setRemoteDescription(data.offer);
+
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    socket.emit("signal", {
+      room,
+      data:{answer:pc.localDescription}
+    });
+  }
+
+  if (data.answer) {
+    await pc.setRemoteDescription(data.answer);
+  }
+
+  if (data.candidate) {
+    try {
+      await pc.addIceCandidate(data.candidate);
+    } catch(e){}
+  }
 });
 </script>
 
