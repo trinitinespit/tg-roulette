@@ -1,155 +1,97 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
+  <meta charset="utf-8" />
   <title>Video Roulette</title>
   <style>
-    video {
-      width: 300px;
-      background: black;
-      margin: 5px;
-    }
+    body { font-family: sans-serif; text-align: center; background: #111; color: white; }
+    video { width: 45%; margin: 10px; background: black; }
+    button { padding: 10px 20px; margin: 10px; }
   </style>
 </head>
 <body>
 
 <h2>Video Roulette</h2>
 
-<button onclick="startCamera()">Enable camera</button>
-<button id="findBtn" onclick="find()" disabled>Find partner</button>
-<button onclick="next()">Next</button>
+<button id="start">Start camera</button>
+<button id="find">Find partner</button>
 
-<p id="status">Camera not started</p>
-
-<video id="local" autoplay muted playsinline
-  style="transform: scaleX(-1);"></video>
-<video id="remote" autoplay playsinline></video>
+<div>
+  <video id="local" autoplay playsinline muted></video>
+  <video id="remote" autoplay playsinline></video>
+</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
 
-let room = null;
-let pc = null;
-let stream = null;
+let localStream;
+let pc;
+let room;
 
-let searching = false;
-let streamReady = false;
+const config = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+};
 
-// 🎥 КАМЕРА ПО КНОПКЕ
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true
-    });
+const localVideo = document.getElementById("local");
+const remoteVideo = document.getElementById("remote");
 
-    document.getElementById("local").srcObject = stream;
+document.getElementById("start").onclick = async () => {
+  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  localVideo.srcObject = localStream;
+};
 
-    streamReady = true;
-    document.getElementById("status").innerText = "Camera ready";
+document.getElementById("find").onclick = () => {
+  socket.emit("find");
+};
 
-    document.getElementById("findBtn").disabled = false;
+function createPeer(initiator) {
+  pc = new RTCPeerConnection(config);
 
-  } catch (err) {
-    console.log(err);
-    document.getElementById("status").innerText = "Camera blocked / denied";
-  }
-}
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
-// 🔧 PEER
-function createPeer() {
-  pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-  });
-
-  stream.getTracks().forEach(track => {
-    pc.addTrack(track, stream);
-  });
-
-  pc.ontrack = (e) => {
-    document.getElementById("remote").srcObject = e.streams[0];
+  pc.ontrack = (event) => {
+    remoteVideo.srcObject = event.streams[0];
   };
 
-  pc.onicecandidate = (e) => {
-    if (e.candidate && room) {
-      socket.emit("signal", { room, data: e.candidate });
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit("signal", { room, data: { candidate: event.candidate } });
     }
   };
+
+  if (initiator) {
+    pc.createOffer().then(offer => {
+      pc.setLocalDescription(offer);
+      socket.emit("signal", { room, data: { offer } });
+    });
+  }
 }
 
-// 🎯 MATCH
-socket.on("matched", async (data) => {
+socket.on("matched", (data) => {
   room = data.room;
-  searching = false;
-
-  document.getElementById("status").innerText = "MATCHED";
-
-  createPeer();
-
-  if (data.initiator) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    socket.emit("signal", { room, data: offer });
-  }
+  createPeer(data.initiator);
 });
 
-// 📡 SIGNAL
 socket.on("signal", async (data) => {
-  if (!pc) return;
-
-  if (data.type === "offer") {
-    await pc.setRemoteDescription(data);
-
+  if (data.offer) {
+    await pc.setRemoteDescription(data.offer);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    socket.emit("signal", { room, data: answer });
+    socket.emit("signal", { room, data: { answer } });
+  }
 
-  } else if (data.type === "answer") {
-    await pc.setRemoteDescription(data);
+  if (data.answer) {
+    await pc.setRemoteDescription(data.answer);
+  }
 
-  } else {
+  if (data.candidate) {
     try {
-      await pc.addIceCandidate(data);
-    } catch {}
+      await pc.addIceCandidate(data.candidate);
+    } catch (e) {}
   }
 });
-
-// 🚀 FIND
-function find() {
-  if (!streamReady) {
-    document.getElementById("status").innerText = "Enable camera first";
-    return;
-  }
-
-  if (searching) return;
-  searching = true;
-
-  cleanup();
-
-  socket.emit("find");
-  document.getElementById("status").innerText = "Searching...";
-}
-
-// ⏭ NEXT
-function next() {
-  cleanup();
-  socket.emit("find");
-}
-
-// 🧹 CLEANUP
-function cleanup() {
-  room = null;
-
-  if (pc) {
-    pc.close();
-    pc = null;
-  }
-
-  document.getElementById("remote").srcObject = null;
-  document.getElementById("status").innerText = "Idle";
-}
 </script>
 
 </body>
