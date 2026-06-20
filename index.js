@@ -5,7 +5,9 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -16,29 +18,29 @@ app.get("/", (req, res) => {
 let queue = [];
 let pair = new Map();
 
-function remove(id) {
+function removeFromQueue(id) {
   queue = queue.filter(x => x !== id);
 }
 
 function unpair(id) {
-  const p = pair.get(id);
-  if (!p) return;
+  const partner = pair.get(id);
+  if (!partner) return;
 
-  pair.delete(p);
   pair.delete(id);
+  pair.delete(partner);
 
-  io.to(p).emit("partner_left");
+  io.to(partner).emit("partner_left");
   io.to(id).emit("partner_left");
 }
 
-function match() {
+function matchUsers() {
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
     if (!a || !b) return;
 
-    const room = `${a}#${b}`;
+    const room = a + "#" + b;
 
     pair.set(a, b);
     pair.set(b, a);
@@ -49,17 +51,17 @@ function match() {
 }
 
 io.on("connection", (socket) => {
-  console.log("connected", socket.id);
+  console.log("CONNECTED", socket.id);
 
   socket.on("find", () => {
-    remove(socket.id);
+    console.log("FIND", socket.id);
+
+    removeFromQueue(socket.id);
     unpair(socket.id);
 
-    if (!queue.includes(socket.id)) {
-      queue.push(socket.id);
-    }
+    queue.push(socket.id);
 
-    match();
+    matchUsers();
   });
 
   socket.on("signal", ({ room, data }) => {
@@ -68,18 +70,19 @@ io.on("connection", (socket) => {
 
   socket.on("next", () => {
     unpair(socket.id);
-    remove(socket.id);
+    removeFromQueue(socket.id);
 
     queue.push(socket.id);
-    match();
+    matchUsers();
   });
 
   socket.on("disconnect", () => {
     unpair(socket.id);
-    remove(socket.id);
+    removeFromQueue(socket.id);
   });
 });
 
-server.listen(3000, () => {
-  console.log("server running");
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log("SERVER RUNNING ON", PORT);
 });

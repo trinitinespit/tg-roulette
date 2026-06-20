@@ -29,20 +29,12 @@ video {
   object-fit:cover;
 }
 
-/* локальная камера зеркальная */
 #local {
   transform: scaleX(-1);
 }
 
-/* SEARCH BLUR */
-.searching {
-  filter: blur(6px) brightness(0.6);
-}
-
-/* OVERLAY */
 .remote-wrapper {
   position:relative;
-  display:inline-block;
 }
 
 .overlay {
@@ -53,14 +45,12 @@ video {
   align-items:center;
   background:rgba(0,0,0,0.6);
   font-size:18px;
-  font-weight:600;
 }
 
 .hidden {
   display:none;
 }
 
-/* анимация точек */
 @keyframes dots {
   0% { content: "."; }
   33% { content: ".."; }
@@ -75,9 +65,6 @@ video {
 button {
   margin:5px;
   padding:10px 15px;
-  border:none;
-  border-radius:8px;
-  cursor:pointer;
 }
 </style>
 </head>
@@ -96,7 +83,6 @@ button {
 
   <div class="remote-wrapper">
     <video id="remote" autoplay playsinline></video>
-
     <div id="overlay" class="overlay hidden">
       Searching<span class="dots"></span>
     </div>
@@ -117,27 +103,21 @@ const local = document.getElementById("local");
 const remote = document.getElementById("remote");
 const overlay = document.getElementById("overlay");
 
-function setSearching(state) {
-  if (state) {
-    overlay.classList.remove("hidden");
-    remote.classList.add("searching");
-  } else {
-    overlay.classList.add("hidden");
-    remote.classList.remove("searching");
-  }
+function searching(on) {
+  overlay.classList.toggle("hidden", !on);
 }
 
 document.getElementById("start").onclick = async () => {
   stream = await navigator.mediaDevices.getUserMedia({
-    video: true,
-    audio: true
+    video:true,
+    audio:true
   });
 
   local.srcObject = stream;
 };
 
 document.getElementById("find").onclick = () => {
-  setSearching(true);
+  searching(true);
   socket.emit("find");
 };
 
@@ -146,27 +126,27 @@ document.getElementById("next").onclick = () => {
   pc = null;
   remote.srcObject = null;
 
-  setSearching(true);
+  searching(true);
   socket.emit("next");
 };
 
 function createPeer(initiator) {
   pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers:[{urls:"stun:stun.l.google.com:19302"}]
   });
 
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
   pc.ontrack = e => {
     remote.srcObject = e.streams[0];
-    setSearching(false);
+    searching(false);
   };
 
   pc.onicecandidate = e => {
     if (e.candidate) {
       socket.emit("signal", {
         room,
-        data: { candidate: e.candidate }
+        data:{candidate:e.candidate}
       });
     }
   };
@@ -177,7 +157,7 @@ function createPeer(initiator) {
       .then(() => {
         socket.emit("signal", {
           room,
-          data: { offer: pc.localDescription }
+          data:{offer:pc.localDescription}
         });
       });
   }
@@ -198,7 +178,7 @@ socket.on("signal", async data => {
 
     socket.emit("signal", {
       room,
-      data: { answer: pc.localDescription }
+      data:{answer:pc.localDescription}
     });
   }
 
@@ -215,7 +195,7 @@ socket.on("partner_left", () => {
   if (pc) pc.close();
   pc = null;
   remote.srcObject = null;
-  setSearching(true);
+  searching(true);
 });
 </script>
 
