@@ -2,55 +2,79 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Roulette</title>
+<title>Video Chat</title>
 
 <style>
 body {
+  margin:0;
   background:#111;
-  color:#fff;
-  text-align:center;
+  color:white;
   font-family:sans-serif;
+  text-align:center;
+}
+
+h2 {
+  margin-top:10px;
+}
+
+.wrap {
+  display:flex;
+  justify-content:center;
+  gap:20px;
+  margin-top:20px;
+  flex-wrap:wrap;
 }
 
 video {
   width:45vw;
+  max-width:500px;
+  aspect-ratio:16/9;
   background:black;
   border-radius:10px;
-  margin:10px;
+  object-fit:cover;
 }
 
-#remote {
+/* только локалка зеркалится */
+#local {
   transform: scaleX(-1);
 }
 
-.overlay {
+button {
+  margin:5px;
+  padding:10px 15px;
+  cursor:pointer;
+}
+
+#overlay {
   position:fixed;
-  top:0; left:0; right:0; bottom:0;
+  inset:0;
   display:flex;
-  justify-content:center;
   align-items:center;
+  justify-content:center;
   background:rgba(0,0,0,0.6);
   font-size:22px;
 }
 
-.hidden { display:none; }
+.hidden {
+  display:none;
+}
 </style>
 </head>
 
 <body>
 
-<h2>Video Chat</h2>
+<h2>Video Roulette</h2>
 
-<button id="start">Start</button>
-<button id="find">Find</button>
+<button id="start">Start camera</button>
+<button id="find">Find partner</button>
 <button id="next">Next</button>
 
-<div>
+<div class="wrap">
   <video id="local" autoplay muted playsinline></video>
   <video id="remote" autoplay playsinline></video>
 </div>
 
-<div id="overlay" class="overlay hidden">Searching...</div>
+<div id="overlay" class="hidden">Searching...</div>
 
 <script src="/socket.io/socket.io.js"></script>
 
@@ -65,7 +89,7 @@ const local = document.getElementById("local");
 const remote = document.getElementById("remote");
 const overlay = document.getElementById("overlay");
 
-function showSearch(v){
+function setSearching(v){
   overlay.classList.toggle("hidden", !v);
 }
 
@@ -79,18 +103,24 @@ document.getElementById("start").onclick = async () => {
 };
 
 document.getElementById("find").onclick = () => {
-  if (!stream) return alert("Start first");
+  if (!stream) {
+    alert("Сначала включи камеру");
+    return;
+  }
 
-  showSearch(true);
+  remote.srcObject = null;
+  setSearching(true);
+
   socket.emit("find");
 };
 
 document.getElementById("next").onclick = () => {
   if (pc) pc.close();
   pc = null;
-  remote.srcObject = null;
 
-  showSearch(true);
+  remote.srcObject = null;
+  setSearching(true);
+
   socket.emit("find");
 };
 
@@ -103,7 +133,7 @@ function createPeer(initiator) {
 
   pc.ontrack = (e) => {
     remote.srcObject = e.streams[0];
-    showSearch(false);
+    setSearching(false);
   };
 
   pc.onicecandidate = (e) => {
@@ -117,18 +147,24 @@ function createPeer(initiator) {
 
   if (initiator) {
     pc.createOffer()
-    .then(o => pc.setLocalDescription(o))
-    .then(() => {
-      socket.emit("signal", {
-        room,
-        data:{offer:pc.localDescription}
+      .then(o => pc.setLocalDescription(o))
+      .then(() => {
+        socket.emit("signal", {
+          room,
+          data:{offer:pc.localDescription}
+        });
       });
-    });
   }
 }
 
 socket.on("matched", (data) => {
   room = data.room;
+
+  if (!stream) {
+    console.log("WAIT CAMERA");
+    return;
+  }
+
   createPeer(data.initiator);
 });
 
@@ -151,8 +187,9 @@ socket.on("signal", async (data) => {
   }
 
   if (data.candidate) {
-    try { await pc.addIceCandidate(data.candidate); }
-    catch(e){}
+    try {
+      await pc.addIceCandidate(data.candidate);
+    } catch(e){}
   }
 });
 </script>
