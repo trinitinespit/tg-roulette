@@ -50,4 +50,26 @@ const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
   console.log("Server running on port " + PORT);
+  const express = require("express");
+const app = express();
+const http = require("http").createServer(app);
+const io = require("socket.io")(http);
+const path = require("path");
+
+// 👇 ВАЖНО: отдаём статические файлы
+app.use(express.static(__dirname));
+
+// 👇 ГЛАВНАЯ СТРАНИЦА
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "test.html"));
+});
+
+// socket логика (если у тебя уже есть — оставь свою)
+io.on("connection", (socket) => {
+  console.log("user connected");
+});
+
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => {
+  console.log("Server running on " + PORT);
 });
