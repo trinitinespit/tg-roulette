@@ -9,19 +9,12 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, "public")));
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "test.html"));
-});
-
 let waiting = null;
 
 io.on("connection", (socket) => {
-  console.log("CONNECTED:", socket.id);
+  console.log("connected", socket.id);
 
   socket.on("find", () => {
-    console.log("FIND:", socket.id);
-
-    // если уже ждёт кто-то другой → матч
     if (waiting && waiting !== socket.id) {
       const a = waiting;
       const b = socket.id;
@@ -31,14 +24,10 @@ io.on("connection", (socket) => {
       io.to(a).emit("matched", { room, initiator: true });
       io.to(b).emit("matched", { room, initiator: false });
 
-      console.log("MATCHED:", a, b);
-
       waiting = null;
-      return;
+    } else {
+      waiting = socket.id;
     }
-
-    // иначе ставим в ожидание
-    waiting = socket.id;
   });
 
   socket.on("signal", ({ room, data }) => {
@@ -50,6 +39,4 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log("SERVER RUNNING");
-});
+server.listen(process.env.PORT || 3000);

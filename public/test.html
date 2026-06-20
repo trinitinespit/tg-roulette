@@ -1,158 +1,83 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8" />
-<title>Video Roulette FIX</title>
+<meta charset="utf-8"/>
+<title>Omegle-like</title>
 
 <style>
-body {
-  margin:0;
-  background:#111;
-  color:#fff;
-  font-family:sans-serif;
-  text-align:center;
-}
-
-.wrap {
-  display:flex;
-  justify-content:center;
-  gap:20px;
-  margin-top:20px;
-  flex-wrap:wrap;
-}
-
-video {
-  width:45vw;
-  max-width:500px;
-  aspect-ratio:16/9;
-  background:black;
-  border-radius:10px;
-  object-fit:cover;
-}
-
-#local {
-  transform: scaleX(-1);
-}
-
-button {
-  margin:5px;
-  padding:10px 15px;
-}
-
-#overlay {
-  position:fixed;
-  inset:0;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  background:rgba(0,0,0,0.6);
-  font-size:22px;
-}
-
-.hidden {
-  display:none;
-}
+body { background:#111; color:white; text-align:center; font-family:sans-serif; }
+video { width:45vw; background:black; border-radius:10px; margin:10px; }
+#local { transform: scaleX(-1); }
 </style>
 </head>
 
 <body>
 
-<h2>Video Roulette</h2>
+<h2>Video Chat</h2>
 
 <button id="start">Start</button>
 <button id="find">Find</button>
-<button id="next">Next</button>
 
-<div class="wrap">
+<div>
   <video id="local" autoplay muted playsinline></video>
   <video id="remote" autoplay playsinline></video>
 </div>
-
-<div id="overlay" class="hidden">Searching...</div>
 
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
 const socket = io();
 
-let stream = null;
-let pc = null;
-let room = null;
-let ready = false;
+let stream;
+let pc;
+let room;
 
 const local = document.getElementById("local");
 const remote = document.getElementById("remote");
-const overlay = document.getElementById("overlay");
-
-function show(v){
-  overlay.classList.toggle("hidden", !v);
-}
 
 document.getElementById("start").onclick = async () => {
-  stream = await navigator.mediaDevices.getUserMedia({
-    video:true,
-    audio:true
-  });
-
+  stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
   local.srcObject = stream;
-  ready = true;
 };
 
 document.getElementById("find").onclick = () => {
-  if (!ready) return alert("Start camera first");
-
-  show(true);
-  socket.emit("find");
-};
-
-document.getElementById("next").onclick = () => {
-  if (pc) pc.close();
-  pc = null;
-  remote.srcObject = null;
-
-  show(true);
   socket.emit("find");
 };
 
 function createPeer(initiator) {
   pc = new RTCPeerConnection({
-    iceServers:[{urls:"stun:stun.l.google.com:19302"}]
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   });
 
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
   pc.ontrack = (e) => {
     remote.srcObject = e.streams[0];
-    show(false);
   };
 
   pc.onicecandidate = (e) => {
     if (e.candidate) {
       socket.emit("signal", {
         room,
-        data:{candidate:e.candidate}
+        data: { candidate: e.candidate }
       });
     }
   };
 
-  (async () => {
-    if (initiator) {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      socket.emit("signal", {
-        room,
-        data:{offer:pc.localDescription}
+  if (initiator) {
+    pc.createOffer()
+      .then(o => pc.setLocalDescription(o))
+      .then(() => {
+        socket.emit("signal", {
+          room,
+          data: { offer: pc.localDescription }
+        });
       });
-    }
-  })();
+  }
 }
 
 socket.on("matched", (data) => {
   room = data.room;
-
-  if (!ready) return;
-
   createPeer(data.initiator);
 });
 
@@ -161,13 +86,12 @@ socket.on("signal", async (data) => {
 
   if (data.offer) {
     await pc.setRemoteDescription(data.offer);
-
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
+    const ans = await pc.createAnswer();
+    await pc.setLocalDescription(ans);
 
     socket.emit("signal", {
       room,
-      data:{answer:pc.localDescription}
+      data: { answer: pc.localDescription }
     });
   }
 
@@ -176,9 +100,7 @@ socket.on("signal", async (data) => {
   }
 
   if (data.candidate) {
-    try {
-      await pc.addIceCandidate(data.candidate);
-    } catch(e){}
+    try { await pc.addIceCandidate(data.candidate); } catch(e){}
   }
 });
 </script>
