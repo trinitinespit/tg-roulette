@@ -14,6 +14,33 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "test.html"));
 });
 
+// Отдаём клиенту свежие TURN-креды от Metered (Open Relay).
+// API_KEY хранится только на сервере (в env), в браузер не попадает.
+app.get("/ice-servers", async (req, res) => {
+  const appName = process.env.METERED_APP_NAME;
+  const apiKey = process.env.METERED_API_KEY;
+
+  const fallback = [{ urls: "stun:stun.l.google.com:19302" }];
+
+  if (!appName || !apiKey) {
+    console.warn("[ice-servers] METERED_APP_NAME / METERED_API_KEY не заданы, отдаю только STUN");
+    return res.json(fallback);
+  }
+
+  try {
+    const r = await fetch(
+      `https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`
+    );
+    if (!r.ok) throw new Error(`Metered ответил ${r.status}`);
+    const iceServers = await r.json();
+    console.log("[ice-servers] получены TURN-креды от Metered");
+    res.json(iceServers);
+  } catch (e) {
+    console.error("[ice-servers] не удалось получить TURN-креды:", e.message);
+    res.json(fallback);
+  }
+});
+
 let waiting = null;
 
 io.on("connection", (socket) => {
