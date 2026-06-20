@@ -13,43 +13,17 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "test.html"));
 });
 
-// очередь
 let queue = [];
-
-// пары
 let pairs = new Map();
 
-// heartbeat
-let alive = new Map();
-
-function removeFromQueue(id) {
-  queue = queue.filter(s => s !== id);
-}
-
-function cleanup(id) {
-  removeFromQueue(id);
-  alive.delete(id);
-
-  const partner = pairs.get(id);
-
-  if (partner) {
-    pairs.delete(partner);
-    pairs.delete(id);
-
-    io.to(partner).emit("partner_disconnected");
-    io.to(id).emit("partner_disconnected");
-  }
-}
-
-// матчинг
-function matchUsers() {
+function match() {
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
     if (!a || !b) return;
 
-    const room = a + "#" + b;
+    const room = `${a}#${b}`;
 
     pairs.set(a, b);
     pairs.set(b, a);
@@ -59,49 +33,56 @@ function matchUsers() {
   }
 }
 
+function remove(id) {
+  queue = queue.filter(x => x !== id);
+}
+
 io.on("connection", (socket) => {
-  console.log("connected", socket.id);
+  console.log("connect", socket.id);
 
-  alive.set(socket.id, Date.now());
+  socket.on("find", () => {
+    remove(socket.id);
 
-  queue.push(socket.id);
-  matchUsers();
+    if (pairs.has(socket.id)) return;
 
-  // heartbeat
-  socket.on("ping_alive", () => {
-    alive.set(socket.id, Date.now());
+    queue.push(socket.id);
+    match();
   });
 
-  // сигнал WebRTC
   socket.on("signal", ({ room, data }) => {
     socket.to(room).emit("signal", data);
   });
 
-  // next
   socket.on("next", () => {
-    cleanup(socket.id);
+    const partner = pairs.get(socket.id);
 
+    if (partner) {
+      pairs.delete(partner);
+      pairs.delete(socket.id);
+
+      io.to(partner).emit("partner_disconnected");
+      io.to(socket.id).emit("partner_disconnected");
+    }
+
+    remove(socket.id);
     queue.push(socket.id);
-    matchUsers();
+    match();
   });
 
   socket.on("disconnect", () => {
-    cleanup(socket.id);
+    const partner = pairs.get(socket.id);
+
+    if (partner) {
+      pairs.delete(partner);
+      pairs.delete(socket.id);
+
+      io.to(partner).emit("partner_disconnected");
+    }
+
+    remove(socket.id);
   });
 });
 
-// чистка мёртвых сокетов
-setInterval(() => {
-  const now = Date.now();
-
-  for (let [id, last] of alive.entries()) {
-    if (now - last > 15000) {
-      cleanup(id);
-    }
-  }
-}, 10000);
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("Server running on", PORT);
+server.listen(3000, () => {
+  console.log("server running");
 });

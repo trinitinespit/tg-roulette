@@ -1,57 +1,24 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Video Roulette</title>
+<meta charset="utf-8" />
+<title>Video Roulette</title>
 
-  <style>
-    body {
-      font-family: sans-serif;
-      background: #111;
-      color: white;
-      text-align: center;
-    }
-
-    .wrap {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-      margin-top: 20px;
-      flex-wrap: wrap;
-    }
-
-    video {
-      width: 45vw;
-      max-width: 500px;
-      aspect-ratio: 16/9;
-      background: black;
-      border-radius: 10px;
-      object-fit: cover;
-    }
-
-    button {
-      padding: 10px 15px;
-      margin: 5px;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-    }
-
-    #status {
-      margin-top: 10px;
-      opacity: 0.7;
-    }
-  </style>
+<style>
+body { background:#111; color:white; text-align:center; font-family:sans-serif; }
+video { width:45vw; max-width:500px; border-radius:10px; background:black; }
+.wrap { display:flex; justify-content:center; gap:20px; margin-top:20px; }
+button { margin:5px; padding:10px; }
+</style>
 </head>
 
 <body>
 
 <h2>Video Roulette</h2>
 
-<button id="start">Start camera</button>
+<button id="start">Start</button>
+<button id="find">Find</button>
 <button id="next">Next</button>
-
-<div id="status">Idle</div>
 
 <div class="wrap">
   <video id="local" autoplay playsinline muted></video>
@@ -63,54 +30,42 @@
 <script>
 const socket = io();
 
-let localStream;
+let stream;
 let pc;
 let room;
 
-const status = document.getElementById("status");
-
-const config = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-};
-
-const localVideo = document.getElementById("local");
-const remoteVideo = document.getElementById("remote");
+const local = document.getElementById("local");
+const remote = document.getElementById("remote");
 
 document.getElementById("start").onclick = async () => {
-  localStream = await navigator.mediaDevices.getUserMedia({
-    video: true,
-    audio: true
-  });
+  stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+  local.srcObject = stream;
+};
 
-  localVideo.srcObject = localStream;
-  status.innerText = "Waiting...";
+document.getElementById("find").onclick = () => {
+  socket.emit("find");
 };
 
 document.getElementById("next").onclick = () => {
   if (pc) pc.close();
   pc = null;
-  remoteVideo.srcObject = null;
+  remote.srcObject = null;
 
   socket.emit("next");
 };
 
-function createPeer(initiator) {
-  pc = new RTCPeerConnection(config);
-
-  localStream.getTracks().forEach(track => {
-    pc.addTrack(track, localStream);
+function create(initiator) {
+  pc = new RTCPeerConnection({
+    iceServers:[{urls:"stun:stun.l.google.com:19302"}]
   });
 
-  pc.ontrack = (e) => {
-    remoteVideo.srcObject = e.streams[0];
-  };
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
-  pc.onicecandidate = (e) => {
+  pc.ontrack = e => remote.srcObject = e.streams[0];
+
+  pc.onicecandidate = e => {
     if (e.candidate) {
-      socket.emit("signal", {
-        room,
-        data: { candidate: e.candidate }
-      });
+      socket.emit("signal", { room, data:{ candidate:e.candidate }});
     }
   };
 
@@ -118,26 +73,17 @@ function createPeer(initiator) {
     pc.createOffer()
       .then(o => pc.setLocalDescription(o))
       .then(() => {
-        socket.emit("signal", {
-          room,
-          data: { offer: pc.localDescription }
-        });
+        socket.emit("signal", { room, data:{ offer:pc.localDescription }});
       });
   }
 }
 
-// heartbeat
-setInterval(() => {
-  socket.emit("ping_alive");
-}, 5000);
-
-socket.on("matched", (data) => {
+socket.on("matched", data => {
   room = data.room;
-  status.innerText = "Connected";
-  createPeer(data.initiator);
+  create(data.initiator);
 });
 
-socket.on("signal", async (data) => {
+socket.on("signal", async data => {
   if (!pc) return;
 
   if (data.offer) {
@@ -145,10 +91,7 @@ socket.on("signal", async (data) => {
     const ans = await pc.createAnswer();
     await pc.setLocalDescription(ans);
 
-    socket.emit("signal", {
-      room,
-      data: { answer: pc.localDescription }
-    });
+    socket.emit("signal", { room, data:{ answer:pc.localDescription }});
   }
 
   if (data.answer) {
@@ -156,17 +99,14 @@ socket.on("signal", async (data) => {
   }
 
   if (data.candidate) {
-    try {
-      await pc.addIceCandidate(data.candidate);
-    } catch (e) {}
+    try { await pc.addIceCandidate(data.candidate); } catch {}
   }
 });
 
 socket.on("partner_disconnected", () => {
   if (pc) pc.close();
   pc = null;
-  remoteVideo.srcObject = null;
-  status.innerText = "Partner left";
+  remote.srcObject = null;
 });
 </script>
 
