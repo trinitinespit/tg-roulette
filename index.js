@@ -42,13 +42,27 @@ app.get("/ice-servers", async (req, res) => {
 });
 
 let waiting = null;
+const partners = new Map(); // socketId -> partnerSocketId, только пока есть активный матч
+const roomOf = new Map();   // socketId -> имя комнаты
+
+// Разрывает текущий матч (если есть) и уведомляет партнёра, что он остался один
+function clearMatch(socketId) {
+  const partnerId = partners.get(socketId);
+  partners.delete(socketId);
+  roomOf.delete(socketId);
+
+  if (partnerId) {
+    partners.delete(partnerId);
+    roomOf.delete(partnerId);
+    io.to(partnerId).emit("partner-left");
+    console.log("[partner-left] notified", partnerId, "(was paired with", socketId + ")");
+  }
+}
 
 io.on("connection", (socket) => {
   console.log("[connect]", socket.id, "| waiting was:", waiting);
 
-  socket.on("find", () => {
-    console.log("[find] received from", socket.id, "| current waiting:", waiting);
-
+  function tryMatch() {
     if (waiting && waiting !== socket.id && io.sockets.sockets.has(waiting)) {
       const a = waiting;
       const b = socket.id;
@@ -61,6 +75,11 @@ io.on("connection", (socket) => {
       socketA?.join(room);
       socket.join(room);
 
+      partners.set(a, b);
+      partners.set(b, a);
+      roomOf.set(a, room);
+      roomOf.set(b, room);
+
       console.log("[match]", a, "<->", b, "| room:", room);
 
       io.to(a).emit("matched", { room, initiator: true });
@@ -71,6 +90,19 @@ io.on("connection", (socket) => {
       waiting = socket.id;
       console.log("[waiting] set to", socket.id);
     }
+  }
+
+  socket.on("find", () => {
+    console.log("[find] received from", socket.id, "| current waiting:", waiting);
+    tryMatch();
+  });
+
+  // Пользователь жмёт "Next": разрываем текущий матч (если был) и сразу ищем нового
+  socket.on("skip", () => {
+    console.log("[skip] from", socket.id);
+    clearMatch(socket.id);
+    if (waiting === socket.id) waiting = null;
+    tryMatch();
   });
 
   socket.on("signal", ({ room, data }) => {
@@ -84,6 +116,7 @@ io.on("connection", (socket) => {
       waiting = null;
       console.log("[waiting] cleared, was", socket.id);
     }
+    clearMatch(socket.id);
   });
 });
 

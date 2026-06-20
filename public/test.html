@@ -61,6 +61,23 @@ function setStatus(text, isError) {
   console.log("[status]", text);
 }
 
+// idle -> ready -> searching -> matched
+let appState = "idle";
+
+function setButtonState(state) {
+  appState = state;
+  if (state === "ready") {
+    findBtn.disabled = false;
+    findBtn.textContent = "Find";
+  } else if (state === "searching") {
+    findBtn.disabled = true;
+    findBtn.textContent = "Поиск...";
+  } else if (state === "matched") {
+    findBtn.disabled = false;
+    findBtn.textContent = "Next ➡️";
+  }
+}
+
 socket.on("connect", () => console.log("[client] connected, id =", socket.id));
 socket.on("connect_error", (err) => {
   console.error("[client] connect_error:", err.message);
@@ -71,13 +88,24 @@ socket.on("disconnect", (reason) => {
   setStatus("Соединение с сервером разорвано: " + reason, true);
 });
 
+// Собеседник вышел/нажал Next у себя — сервер уже разорвал матч на своей стороне,
+// нам остаётся почистить локальный peer connection и снова встать в поиск
+socket.on("partner-left", () => {
+  console.log("[client] partner-left");
+  cleanupPeer();
+  room = null;
+  setStatus("Собеседник отключился. Ищем нового...");
+  setButtonState("searching");
+  socket.emit("find");
+});
+
 startBtn.onclick = async () => {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
     local.srcObject = stream;
     console.log("[client] got camera/mic stream");
     setStatus("Камера готова. Можно искать собеседника.");
-    findBtn.disabled = false;
+    setButtonState("ready");
     startBtn.disabled = true;
   } catch (e) {
     console.error("[client] getUserMedia failed:", e.name, e.message);
@@ -90,10 +118,21 @@ findBtn.onclick = () => {
     setStatus("Сначала нажми Start — камера не включена", true);
     return;
   }
-  console.log("[client] emitting find, socket.connected =", socket.connected);
-  setStatus("Ищем собеседника...");
-  findBtn.disabled = true;
-  socket.emit("find");
+
+  if (appState === "matched") {
+    // Next: бросаем текущего собеседника и сразу ищем нового
+    console.log("[client] skip current partner");
+    cleanupPeer();
+    room = null;
+    setStatus("Ищем нового собеседника...");
+    setButtonState("searching");
+    socket.emit("skip");
+  } else if (appState === "ready") {
+    console.log("[client] emitting find, socket.connected =", socket.connected);
+    setStatus("Ищем собеседника...");
+    setButtonState("searching");
+    socket.emit("find");
+  }
 };
 
 function cleanupPeer() {
@@ -173,6 +212,7 @@ socket.on("matched", (data) => {
 
   try {
     createPeer(data.initiator);
+    setButtonState("matched");
   } catch (e) {
     console.error("[client] createPeer threw:", e);
     setStatus("Ошибка при создании соединения: " + e.message, true);
