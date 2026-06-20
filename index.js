@@ -19,11 +19,17 @@ let queue = [];
 // пары
 let pairs = new Map();
 
+// heartbeat
+let alive = new Map();
+
 function removeFromQueue(id) {
-  queue = queue.filter(sid => sid !== id);
+  queue = queue.filter(s => s !== id);
 }
 
-function disconnectPair(id) {
+function cleanup(id) {
+  removeFromQueue(id);
+  alive.delete(id);
+
   const partner = pairs.get(id);
 
   if (partner) {
@@ -35,7 +41,8 @@ function disconnectPair(id) {
   }
 }
 
-function tryMatch() {
+// матчинг
+function matchUsers() {
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
@@ -53,29 +60,46 @@ function tryMatch() {
 }
 
 io.on("connection", (socket) => {
-  console.log("connected:", socket.id);
+  console.log("connected", socket.id);
 
-  // авто-очередь при подключении
+  alive.set(socket.id, Date.now());
+
   queue.push(socket.id);
-  tryMatch();
+  matchUsers();
 
+  // heartbeat
+  socket.on("ping_alive", () => {
+    alive.set(socket.id, Date.now());
+  });
+
+  // сигнал WebRTC
   socket.on("signal", ({ room, data }) => {
     socket.to(room).emit("signal", data);
   });
 
+  // next
   socket.on("next", () => {
-    removeFromQueue(socket.id);
-    disconnectPair(socket.id);
+    cleanup(socket.id);
 
     queue.push(socket.id);
-    tryMatch();
+    matchUsers();
   });
 
   socket.on("disconnect", () => {
-    removeFromQueue(socket.id);
-    disconnectPair(socket.id);
+    cleanup(socket.id);
   });
 });
+
+// чистка мёртвых сокетов
+setInterval(() => {
+  const now = Date.now();
+
+  for (let [id, last] of alive.entries()) {
+    if (now - last > 15000) {
+      cleanup(id);
+    }
+  }
+}, 10000);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {

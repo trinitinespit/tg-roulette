@@ -51,7 +51,7 @@
 <button id="start">Start camera</button>
 <button id="next">Next</button>
 
-<div id="status">Idle...</div>
+<div id="status">Idle</div>
 
 <div class="wrap">
   <video id="local" autoplay playsinline muted></video>
@@ -83,8 +83,7 @@ document.getElementById("start").onclick = async () => {
   });
 
   localVideo.srcObject = localStream;
-
-  status.innerText = "Waiting for partner...";
+  status.innerText = "Waiting...";
 };
 
 document.getElementById("next").onclick = () => {
@@ -93,7 +92,6 @@ document.getElementById("next").onclick = () => {
   remoteVideo.srcObject = null;
 
   socket.emit("next");
-  status.innerText = "Searching...";
 };
 
 function createPeer(initiator) {
@@ -127,6 +125,11 @@ function createPeer(initiator) {
       });
   }
 }
+
+// heartbeat
+setInterval(() => {
+  socket.emit("ping_alive");
+}, 5000);
 
 socket.on("matched", (data) => {
   room = data.room;
@@ -163,8 +166,7 @@ socket.on("partner_disconnected", () => {
   if (pc) pc.close();
   pc = null;
   remoteVideo.srcObject = null;
-
-  status.innerText = "Partner left. Searching...";
+  status.innerText = "Partner left";
 });
 </script>
 
