@@ -15,51 +15,65 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "test.html"));
 });
 
+/**
+ * 🔥 КЛЮЧ:
+ * используем FIFO очередь + блокировку матчинга
+ */
 let queue = [];
-let paired = new Map();
+let processing = false;
+let pairs = new Map();
 
 function remove(id) {
   queue = queue.filter(x => x !== id);
 }
 
 function unpair(id) {
-  const partner = paired.get(id);
+  const partner = pairs.get(id);
   if (!partner) return;
 
-  paired.delete(id);
-  paired.delete(partner);
+  pairs.delete(id);
+  pairs.delete(partner);
 
   io.to(id).emit("partner_left");
   io.to(partner).emit("partner_left");
 }
 
 function tryMatch() {
+  if (processing) return; // 🔥 защита от race condition
+
+  processing = true;
+
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
-    if (!a || !b) return;
+    if (!a || !b) continue;
 
     const room = `${a}#${b}`;
 
-    paired.set(a, b);
-    paired.set(b, a);
+    pairs.set(a, b);
+    pairs.set(b, a);
 
     io.to(a).emit("matched", { room, initiator: true });
     io.to(b).emit("matched", { room, initiator: false });
+
+    console.log("MATCHED:", a, b);
   }
+
+  processing = false;
 }
 
 io.on("connection", (socket) => {
-  console.log("CONNECTED", socket.id);
+  console.log("CONNECTED:", socket.id);
 
   socket.on("find", () => {
-    console.log("FIND", socket.id);
+    console.log("FIND:", socket.id);
 
-    unpair(socket.id);
     remove(socket.id);
+    unpair(socket.id);
 
     queue.push(socket.id);
+
     tryMatch();
   });
 
@@ -68,11 +82,8 @@ io.on("connection", (socket) => {
     remove(socket.id);
 
     queue.push(socket.id);
-    tryMatch();
-  });
 
-  socket.on("signal", ({ room, data }) => {
-    socket.to(room).emit("signal", data);
+    tryMatch();
   });
 
   socket.on("disconnect", () => {
