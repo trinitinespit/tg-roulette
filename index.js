@@ -14,25 +14,24 @@ app.get("/", (req, res) => {
 });
 
 let queue = [];
-let pairs = new Map();
+let pair = new Map();
 
-function removeFromQueue(id) {
+function remove(id) {
   queue = queue.filter(x => x !== id);
 }
 
 function unpair(id) {
-  const partner = pairs.get(id);
+  const p = pair.get(id);
+  if (!p) return;
 
-  if (partner) {
-    pairs.delete(partner);
-    pairs.delete(id);
+  pair.delete(p);
+  pair.delete(id);
 
-    io.to(partner).emit("partner_disconnected");
-    io.to(id).emit("partner_disconnected");
-  }
+  io.to(p).emit("partner_left");
+  io.to(id).emit("partner_left");
 }
 
-function matchUsers() {
+function match() {
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
@@ -41,8 +40,8 @@ function matchUsers() {
 
     const room = `${a}#${b}`;
 
-    pairs.set(a, b);
-    pairs.set(b, a);
+    pair.set(a, b);
+    pair.set(b, a);
 
     io.to(a).emit("matched", { room, initiator: true });
     io.to(b).emit("matched", { room, initiator: false });
@@ -50,20 +49,17 @@ function matchUsers() {
 }
 
 io.on("connection", (socket) => {
-  console.log("connect", socket.id);
+  console.log("connected", socket.id);
 
   socket.on("find", () => {
-    removeFromQueue(socket.id);
-
-    // если уже в паре — сначала разорвать
+    remove(socket.id);
     unpair(socket.id);
 
-    // защита от дубля
     if (!queue.includes(socket.id)) {
       queue.push(socket.id);
     }
 
-    matchUsers();
+    match();
   });
 
   socket.on("signal", ({ room, data }) => {
@@ -72,15 +68,15 @@ io.on("connection", (socket) => {
 
   socket.on("next", () => {
     unpair(socket.id);
-    removeFromQueue(socket.id);
+    remove(socket.id);
 
     queue.push(socket.id);
-    matchUsers();
+    match();
   });
 
   socket.on("disconnect", () => {
     unpair(socket.id);
-    removeFromQueue(socket.id);
+    remove(socket.id);
   });
 });
 
