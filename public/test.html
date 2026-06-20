@@ -25,9 +25,9 @@
 <script>
 const socket = io();
 
-let localStream;
-let pc;
-let room;
+let localStream = null;
+let pc = null;
+let room = null;
 
 const config = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -37,18 +37,31 @@ const localVideo = document.getElementById("local");
 const remoteVideo = document.getElementById("remote");
 
 document.getElementById("start").onclick = async () => {
-  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  localVideo.srcObject = localStream;
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localVideo.srcObject = localStream;
+    console.log("camera ok");
+  } catch (e) {
+    alert("Camera error: " + e);
+  }
 };
 
 document.getElementById("find").onclick = () => {
+  if (!localStream) {
+    alert("Сначала включи камеру");
+    return;
+  }
+
+  console.log("searching...");
   socket.emit("find");
 };
 
 function createPeer(initiator) {
   pc = new RTCPeerConnection(config);
 
-  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+  localStream.getTracks().forEach(track => {
+    pc.addTrack(track, localStream);
+  });
 
   pc.ontrack = (event) => {
     remoteVideo.srcObject = event.streams[0];
@@ -61,19 +74,23 @@ function createPeer(initiator) {
   };
 
   if (initiator) {
-    pc.createOffer().then(offer => {
-      pc.setLocalDescription(offer);
-      socket.emit("signal", { room, data: { offer } });
-    });
+    pc.createOffer()
+      .then(offer => pc.setLocalDescription(offer))
+      .then(() => {
+        socket.emit("signal", { room, data: { offer: pc.localDescription } });
+      });
   }
 }
 
 socket.on("matched", (data) => {
+  console.log("MATCHED", data);
   room = data.room;
   createPeer(data.initiator);
 });
 
 socket.on("signal", async (data) => {
+  if (!pc) return;
+
   if (data.offer) {
     await pc.setRemoteDescription(data.offer);
     const answer = await pc.createAnswer();
@@ -89,7 +106,9 @@ socket.on("signal", async (data) => {
   if (data.candidate) {
     try {
       await pc.addIceCandidate(data.candidate);
-    } catch (e) {}
+    } catch (e) {
+      console.log("ICE error", e);
+    }
   }
 });
 </script>
