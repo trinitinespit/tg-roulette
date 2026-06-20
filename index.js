@@ -5,9 +5,7 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -15,53 +13,7 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "test.html"));
 });
 
-/**
- * 🔥 КЛЮЧ:
- * используем FIFO очередь + блокировку матчинга
- */
-let queue = [];
-let processing = false;
-let pairs = new Map();
-
-function remove(id) {
-  queue = queue.filter(x => x !== id);
-}
-
-function unpair(id) {
-  const partner = pairs.get(id);
-  if (!partner) return;
-
-  pairs.delete(id);
-  pairs.delete(partner);
-
-  io.to(id).emit("partner_left");
-  io.to(partner).emit("partner_left");
-}
-
-function tryMatch() {
-  if (processing) return; // 🔥 защита от race condition
-
-  processing = true;
-
-  while (queue.length >= 2) {
-    const a = queue.shift();
-    const b = queue.shift();
-
-    if (!a || !b) continue;
-
-    const room = `${a}#${b}`;
-
-    pairs.set(a, b);
-    pairs.set(b, a);
-
-    io.to(a).emit("matched", { room, initiator: true });
-    io.to(b).emit("matched", { room, initiator: false });
-
-    console.log("MATCHED:", a, b);
-  }
-
-  processing = false;
-}
+let waiting = null;
 
 io.on("connection", (socket) => {
   console.log("CONNECTED:", socket.id);
@@ -69,26 +21,32 @@ io.on("connection", (socket) => {
   socket.on("find", () => {
     console.log("FIND:", socket.id);
 
-    remove(socket.id);
-    unpair(socket.id);
+    // если уже ждёт кто-то другой → матч
+    if (waiting && waiting !== socket.id) {
+      const a = waiting;
+      const b = socket.id;
 
-    queue.push(socket.id);
+      const room = a + "#" + b;
 
-    tryMatch();
+      io.to(a).emit("matched", { room, initiator: true });
+      io.to(b).emit("matched", { room, initiator: false });
+
+      console.log("MATCHED:", a, b);
+
+      waiting = null;
+      return;
+    }
+
+    // иначе ставим в ожидание
+    waiting = socket.id;
   });
 
-  socket.on("next", () => {
-    unpair(socket.id);
-    remove(socket.id);
-
-    queue.push(socket.id);
-
-    tryMatch();
+  socket.on("signal", ({ room, data }) => {
+    socket.to(room).emit("signal", data);
   });
 
   socket.on("disconnect", () => {
-    unpair(socket.id);
-    remove(socket.id);
+    if (waiting === socket.id) waiting = null;
   });
 });
 

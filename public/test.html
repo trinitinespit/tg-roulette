@@ -2,101 +2,60 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Video Roulette</title>
+<title>Roulette</title>
 
 <style>
 body {
   background:#111;
-  color:white;
-  font-family:sans-serif;
+  color:#fff;
   text-align:center;
-}
-
-.wrap {
-  display:flex;
-  justify-content:center;
-  gap:20px;
-  margin-top:20px;
-  flex-wrap:wrap;
+  font-family:sans-serif;
 }
 
 video {
   width:45vw;
-  max-width:500px;
-  aspect-ratio:16/9;
   background:black;
   border-radius:10px;
-  object-fit:cover;
+  margin:10px;
 }
 
-#local {
+#remote {
   transform: scaleX(-1);
 }
 
-.remote-wrapper {
-  position:relative;
-  display:inline-block;
-}
-
 .overlay {
-  position:absolute;
-  inset:0;
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
   display:flex;
   justify-content:center;
   align-items:center;
   background:rgba(0,0,0,0.6);
-  font-size:18px;
+  font-size:22px;
 }
 
-.hidden {
-  display:none;
-}
-
-@keyframes dots {
-  0% { content: "."; }
-  33% { content: ".."; }
-  66% { content: "..."; }
-}
-
-.dots::after {
-  content: ".";
-  animation: dots 1s infinite;
-}
-
-button {
-  margin:5px;
-  padding:10px 15px;
-}
+.hidden { display:none; }
 </style>
 </head>
 
 <body>
 
-<h2>Video Roulette</h2>
+<h2>Video Chat</h2>
 
 <button id="start">Start</button>
 <button id="find">Find</button>
 <button id="next">Next</button>
 
-<div class="wrap">
-
-  <video id="local" autoplay playsinline muted></video>
-
-  <div class="remote-wrapper">
-    <video id="remote" autoplay playsinline></video>
-
-    <div id="overlay" class="overlay hidden">
-      Searching<span class="dots"></span>
-    </div>
-
-  </div>
-
+<div>
+  <video id="local" autoplay muted playsinline></video>
+  <video id="remote" autoplay playsinline></video>
 </div>
+
+<div id="overlay" class="overlay hidden">Searching...</div>
 
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
-const socket = io(window.location.origin);
+const socket = io();
 
 let stream = null;
 let pc = null;
@@ -106,31 +65,23 @@ const local = document.getElementById("local");
 const remote = document.getElementById("remote");
 const overlay = document.getElementById("overlay");
 
-function setSearching(v) {
+function showSearch(v){
   overlay.classList.toggle("hidden", !v);
 }
 
 document.getElementById("start").onclick = async () => {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true
-    });
+  stream = await navigator.mediaDevices.getUserMedia({
+    video:true,
+    audio:true
+  });
 
-    local.srcObject = stream;
-    console.log("CAMERA READY");
-  } catch (e) {
-    console.error("CAMERA ERROR", e);
-  }
+  local.srcObject = stream;
 };
 
 document.getElementById("find").onclick = () => {
-  if (!stream) {
-    alert("Сначала нажми Start");
-    return;
-  }
+  if (!stream) return alert("Start first");
 
-  setSearching(true);
+  showSearch(true);
   socket.emit("find");
 };
 
@@ -139,59 +90,45 @@ document.getElementById("next").onclick = () => {
   pc = null;
   remote.srcObject = null;
 
-  setSearching(true);
-  socket.emit("next");
+  showSearch(true);
+  socket.emit("find");
 };
 
 function createPeer(initiator) {
   pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" }
-    ]
+    iceServers:[{urls:"stun:stun.l.google.com:19302"}]
   });
 
-  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
   pc.ontrack = (e) => {
     remote.srcObject = e.streams[0];
-    setSearching(false);
+    showSearch(false);
   };
 
   pc.onicecandidate = (e) => {
     if (e.candidate) {
       socket.emit("signal", {
         room,
-        data: { candidate: e.candidate }
+        data:{candidate:e.candidate}
       });
     }
   };
 
   if (initiator) {
     pc.createOffer()
-      .then(o => pc.setLocalDescription(o))
-      .then(() => {
-        socket.emit("signal", {
-          room,
-          data: { offer: pc.localDescription }
-        });
+    .then(o => pc.setLocalDescription(o))
+    .then(() => {
+      socket.emit("signal", {
+        room,
+        data:{offer:pc.localDescription}
       });
+    });
   }
 }
 
-socket.on("connect", () => {
-  console.log("SOCKET CONNECTED");
-});
-
 socket.on("matched", (data) => {
-  console.log("MATCHED RECEIVED", data);
-
   room = data.room;
-
-  if (!stream) {
-    console.log("NO STREAM YET");
-    return;
-  }
-
   createPeer(data.initiator);
 });
 
@@ -205,7 +142,7 @@ socket.on("signal", async (data) => {
 
     socket.emit("signal", {
       room,
-      data: { answer: pc.localDescription }
+      data:{answer:pc.localDescription}
     });
   }
 
@@ -214,19 +151,9 @@ socket.on("signal", async (data) => {
   }
 
   if (data.candidate) {
-    try {
-      await pc.addIceCandidate(data.candidate);
-    } catch (e) {
-      console.log("ICE ERROR", e);
-    }
+    try { await pc.addIceCandidate(data.candidate); }
+    catch(e){}
   }
-});
-
-socket.on("partner_left", () => {
-  if (pc) pc.close();
-  pc = null;
-  remote.srcObject = null;
-  setSearching(true);
 });
 </script>
 
