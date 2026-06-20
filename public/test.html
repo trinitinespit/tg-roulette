@@ -10,12 +10,6 @@
       background: #111;
       color: white;
       text-align: center;
-      margin: 0;
-      padding: 0;
-    }
-
-    h2 {
-      margin-top: 20px;
     }
 
     .wrap {
@@ -29,24 +23,23 @@
     video {
       width: 45vw;
       max-width: 500px;
-      aspect-ratio: 16 / 9;
+      aspect-ratio: 16/9;
       background: black;
-      border-radius: 12px;
+      border-radius: 10px;
       object-fit: cover;
     }
 
-    /* ✔ ВОТ ЭТО И БЫЛО ПРАВИЛЬНО */
-    #local {
-      transform: scaleX(-1);
+    button {
+      padding: 10px 15px;
+      margin: 5px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
     }
 
-    button {
-      padding: 12px 20px;
-      margin: 10px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
+    #status {
+      margin-top: 10px;
+      opacity: 0.7;
     }
   </style>
 </head>
@@ -56,18 +49,13 @@
 <h2>Video Roulette</h2>
 
 <button id="start">Start camera</button>
-<button id="find">Find partner</button>
+<button id="next">Next</button>
+
+<div id="status">Idle...</div>
 
 <div class="wrap">
-  <div>
-    <p>Me</p>
-    <video id="local" autoplay playsinline muted></video>
-  </div>
-
-  <div>
-    <p>Partner</p>
-    <video id="remote" autoplay playsinline></video>
-  </div>
+  <video id="local" autoplay playsinline muted></video>
+  <video id="remote" autoplay playsinline></video>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -75,14 +63,14 @@
 <script>
 const socket = io();
 
-let localStream = null;
-let pc = null;
-let room = null;
+let localStream;
+let pc;
+let room;
+
+const status = document.getElementById("status");
 
 const config = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" }
-  ]
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
 
 const localVideo = document.getElementById("local");
@@ -90,20 +78,22 @@ const remoteVideo = document.getElementById("remote");
 
 document.getElementById("start").onclick = async () => {
   localStream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: "user",
-      width: { ideal: 640 },
-      height: { ideal: 480 }
-    },
+    video: true,
     audio: true
   });
 
   localVideo.srcObject = localStream;
+
+  status.innerText = "Waiting for partner...";
 };
 
-document.getElementById("find").onclick = () => {
-  if (!localStream) return alert("Сначала включи камеру");
-  socket.emit("find");
+document.getElementById("next").onclick = () => {
+  if (pc) pc.close();
+  pc = null;
+  remoteVideo.srcObject = null;
+
+  socket.emit("next");
+  status.innerText = "Searching...";
 };
 
 function createPeer(initiator) {
@@ -113,15 +103,15 @@ function createPeer(initiator) {
     pc.addTrack(track, localStream);
   });
 
-  pc.ontrack = (event) => {
-    remoteVideo.srcObject = event.streams[0];
+  pc.ontrack = (e) => {
+    remoteVideo.srcObject = e.streams[0];
   };
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
       socket.emit("signal", {
         room,
-        data: { candidate: event.candidate }
+        data: { candidate: e.candidate }
       });
     }
   };
@@ -140,6 +130,7 @@ function createPeer(initiator) {
 
 socket.on("matched", (data) => {
   room = data.room;
+  status.innerText = "Connected";
   createPeer(data.initiator);
 });
 
@@ -148,8 +139,8 @@ socket.on("signal", async (data) => {
 
   if (data.offer) {
     await pc.setRemoteDescription(data.offer);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
+    const ans = await pc.createAnswer();
+    await pc.setLocalDescription(ans);
 
     socket.emit("signal", {
       room,
@@ -166,6 +157,14 @@ socket.on("signal", async (data) => {
       await pc.addIceCandidate(data.candidate);
     } catch (e) {}
   }
+});
+
+socket.on("partner_disconnected", () => {
+  if (pc) pc.close();
+  pc = null;
+  remoteVideo.srcObject = null;
+
+  status.innerText = "Partner left. Searching...";
 });
 </script>
 
