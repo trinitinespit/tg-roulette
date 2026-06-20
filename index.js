@@ -16,7 +16,23 @@ app.get("/", (req, res) => {
 let queue = [];
 let pairs = new Map();
 
-function match() {
+function removeFromQueue(id) {
+  queue = queue.filter(x => x !== id);
+}
+
+function unpair(id) {
+  const partner = pairs.get(id);
+
+  if (partner) {
+    pairs.delete(partner);
+    pairs.delete(id);
+
+    io.to(partner).emit("partner_disconnected");
+    io.to(id).emit("partner_disconnected");
+  }
+}
+
+function matchUsers() {
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
@@ -33,20 +49,21 @@ function match() {
   }
 }
 
-function remove(id) {
-  queue = queue.filter(x => x !== id);
-}
-
 io.on("connection", (socket) => {
   console.log("connect", socket.id);
 
   socket.on("find", () => {
-    remove(socket.id);
+    removeFromQueue(socket.id);
 
-    if (pairs.has(socket.id)) return;
+    // если уже в паре — сначала разорвать
+    unpair(socket.id);
 
-    queue.push(socket.id);
-    match();
+    // защита от дубля
+    if (!queue.includes(socket.id)) {
+      queue.push(socket.id);
+    }
+
+    matchUsers();
   });
 
   socket.on("signal", ({ room, data }) => {
@@ -54,32 +71,16 @@ io.on("connection", (socket) => {
   });
 
   socket.on("next", () => {
-    const partner = pairs.get(socket.id);
+    unpair(socket.id);
+    removeFromQueue(socket.id);
 
-    if (partner) {
-      pairs.delete(partner);
-      pairs.delete(socket.id);
-
-      io.to(partner).emit("partner_disconnected");
-      io.to(socket.id).emit("partner_disconnected");
-    }
-
-    remove(socket.id);
     queue.push(socket.id);
-    match();
+    matchUsers();
   });
 
   socket.on("disconnect", () => {
-    const partner = pairs.get(socket.id);
-
-    if (partner) {
-      pairs.delete(partner);
-      pairs.delete(socket.id);
-
-      io.to(partner).emit("partner_disconnected");
-    }
-
-    remove(socket.id);
+    unpair(socket.id);
+    removeFromQueue(socket.id);
   });
 });
 
