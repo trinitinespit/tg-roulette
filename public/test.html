@@ -27,46 +27,54 @@ video {
   background:black;
   border-radius:10px;
   object-fit:cover;
-  transition: all 0.3s ease;
 }
 
-/* 🔥 LOCAL MIRROR (как у человека) */
+/* локальная камера зеркальная */
 #local {
   transform: scaleX(-1);
 }
 
-/* 🔥 SEARCH EFFECT */
+/* SEARCH BLUR */
 .searching {
   filter: blur(6px) brightness(0.6);
-  transform: scale(1.02);
 }
 
-/* 🔥 OVERLAY */
-.overlay {
-  position:absolute;
-  top:0;
-  left:0;
-  width:100%;
-  height:100%;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  font-size:20px;
-  background:rgba(0,0,0,0.5);
-}
-
+/* OVERLAY */
 .remote-wrapper {
   position:relative;
   display:inline-block;
+}
+
+.overlay {
+  position:absolute;
+  inset:0;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  background:rgba(0,0,0,0.6);
+  font-size:18px;
+  font-weight:600;
 }
 
 .hidden {
   display:none;
 }
 
+/* анимация точек */
+@keyframes dots {
+  0% { content: "."; }
+  33% { content: ".."; }
+  66% { content: "..."; }
+}
+
+.dots::after {
+  content: ".";
+  animation: dots 1s infinite;
+}
+
 button {
-  padding:10px 15px;
   margin:5px;
+  padding:10px 15px;
   border:none;
   border-radius:8px;
   cursor:pointer;
@@ -84,15 +92,13 @@ button {
 
 <div class="wrap">
 
-  <div>
-    <video id="local" autoplay playsinline muted></video>
-  </div>
+  <video id="local" autoplay playsinline muted></video>
 
   <div class="remote-wrapper">
     <video id="remote" autoplay playsinline></video>
 
-    <div id="overlay" class="overlay">
-      Searching for partner...
+    <div id="overlay" class="overlay hidden">
+      Searching<span class="dots"></span>
     </div>
   </div>
 
@@ -111,27 +117,27 @@ const local = document.getElementById("local");
 const remote = document.getElementById("remote");
 const overlay = document.getElementById("overlay");
 
-function setSearchingUI(isSearching) {
-  if (isSearching) {
-    remote.classList.add("searching");
+function setSearching(state) {
+  if (state) {
     overlay.classList.remove("hidden");
+    remote.classList.add("searching");
   } else {
-    remote.classList.remove("searching");
     overlay.classList.add("hidden");
+    remote.classList.remove("searching");
   }
 }
 
 document.getElementById("start").onclick = async () => {
   stream = await navigator.mediaDevices.getUserMedia({
-    video:true,
-    audio:true
+    video: true,
+    audio: true
   });
 
   local.srcObject = stream;
 };
 
 document.getElementById("find").onclick = () => {
-  setSearchingUI(true);
+  setSearching(true);
   socket.emit("find");
 };
 
@@ -140,27 +146,27 @@ document.getElementById("next").onclick = () => {
   pc = null;
   remote.srcObject = null;
 
-  setSearchingUI(true);
+  setSearching(true);
   socket.emit("next");
 };
 
 function createPeer(initiator) {
   pc = new RTCPeerConnection({
-    iceServers:[{urls:"stun:stun.l.google.com:19302"}]
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   });
 
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
   pc.ontrack = e => {
     remote.srcObject = e.streams[0];
-    setSearchingUI(false);
+    setSearching(false);
   };
 
   pc.onicecandidate = e => {
     if (e.candidate) {
       socket.emit("signal", {
         room,
-        data:{candidate:e.candidate}
+        data: { candidate: e.candidate }
       });
     }
   };
@@ -171,7 +177,7 @@ function createPeer(initiator) {
       .then(() => {
         socket.emit("signal", {
           room,
-          data:{offer:pc.localDescription}
+          data: { offer: pc.localDescription }
         });
       });
   }
@@ -180,13 +186,6 @@ function createPeer(initiator) {
 socket.on("matched", data => {
   room = data.room;
   createPeer(data.initiator);
-});
-
-socket.on("partner_disconnected", () => {
-  if (pc) pc.close();
-  pc = null;
-  remote.srcObject = null;
-  setSearchingUI(true);
 });
 
 socket.on("signal", async data => {
@@ -199,7 +198,7 @@ socket.on("signal", async data => {
 
     socket.emit("signal", {
       room,
-      data:{answer:pc.localDescription}
+      data: { answer: pc.localDescription }
     });
   }
 
@@ -210,6 +209,13 @@ socket.on("signal", async data => {
   if (data.candidate) {
     try { await pc.addIceCandidate(data.candidate); } catch {}
   }
+});
+
+socket.on("partner_left", () => {
+  if (pc) pc.close();
+  pc = null;
+  remote.srcObject = null;
+  setSearching(true);
 });
 </script>
 
