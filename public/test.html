@@ -35,9 +35,9 @@
       object-fit: cover;
     }
 
-    /* ❗ ВАЖНО: НИКАКОГО MIRROR */
+    /* ✔ ВОТ ЭТО И БЫЛО ПРАВИЛЬНО */
     #local {
-      transform: none !important;
+      transform: scaleX(-1);
     }
 
     button {
@@ -47,10 +47,6 @@
       border-radius: 8px;
       cursor: pointer;
       font-size: 14px;
-    }
-
-    button:hover {
-      opacity: 0.8;
     }
   </style>
 </head>
@@ -92,37 +88,24 @@ const config = {
 const localVideo = document.getElementById("local");
 const remoteVideo = document.getElementById("remote");
 
-// ===== CAMERA =====
 document.getElementById("start").onclick = async () => {
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: "user",   // фронталка нормально и стабильно
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        frameRate: { ideal: 30 }
-      },
-      audio: true
-    });
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: "user",
+      width: { ideal: 640 },
+      height: { ideal: 480 }
+    },
+    audio: true
+  });
 
-    localVideo.srcObject = localStream;
-
-  } catch (e) {
-    alert("Camera error: " + e.message);
-  }
+  localVideo.srcObject = localStream;
 };
 
-// ===== FIND PARTNER =====
 document.getElementById("find").onclick = () => {
-  if (!localStream) {
-    alert("Сначала включи камеру");
-    return;
-  }
-
+  if (!localStream) return alert("Сначала включи камеру");
   socket.emit("find");
 };
 
-// ===== PEER =====
 function createPeer(initiator) {
   pc = new RTCPeerConnection(config);
 
@@ -145,7 +128,7 @@ function createPeer(initiator) {
 
   if (initiator) {
     pc.createOffer()
-      .then(offer => pc.setLocalDescription(offer))
+      .then(o => pc.setLocalDescription(o))
       .then(() => {
         socket.emit("signal", {
           room,
@@ -155,7 +138,6 @@ function createPeer(initiator) {
   }
 }
 
-// ===== SOCKET =====
 socket.on("matched", (data) => {
   room = data.room;
   createPeer(data.initiator);
@@ -182,9 +164,7 @@ socket.on("signal", async (data) => {
   if (data.candidate) {
     try {
       await pc.addIceCandidate(data.candidate);
-    } catch (e) {
-      console.log(e);
-    }
+    } catch (e) {}
   }
 });
 </script>
