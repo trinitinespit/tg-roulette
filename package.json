@@ -12,6 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
+    "pg": "^8.13.3",
     "socket.io": "^4.8.3"
   }
 }
