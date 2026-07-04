@@ -1,257 +1,731 @@
 <!doctype html>
-<html>
+<html lang="ru">
 <head>
 <meta charset="utf-8"/>
-<title>Omegle-like</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"/>
+<title>Spinny</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
 <style>
-body { background:#111; color:white; text-align:center; font-family:sans-serif; }
-video { width:45vw; background:black; border-radius:10px; margin:10px; }
-#local { transform: scaleX(-1); }
-#status { font-size:14px; color:#9f9; min-height:20px; margin:8px; }
-button { padding:8px 16px; margin:4px; font-size:16px; }
-button:disabled { opacity:0.4; }
+:root {
+  --blue:    #1A6FD4;
+  --blue-dk: #1254A8;
+  --blue-lt: #3B8FE8;
+  --bg:      #0D1B2E;
+  --surface: rgba(255,255,255,0.07);
+  --text:    #FFFFFF;
+  --text-dim:#9AB2CC;
+  --green:   #4CD964;
+  --red:     #FF3B30;
+  --radius:  14px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%; width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
+/* ===== ЭКРАНЫ ===== */
+.screen {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  transition: opacity 0.25s;
+}
+.screen[hidden] { display: none !important; }
+
+/* ===== СТАРТОВЫЙ ЭКРАН ===== */
+#screenHome {
+  background: #111;
+}
+
+/* TV-статик — canvas на весь экран */
+#staticCanvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  opacity: 0.55;
+}
+
+/* Затемнение снизу, чтобы контент читался */
+#screenHome::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(13,27,46,0.45) 0%, rgba(13,27,46,0.85) 55%, #0D1B2E 100%);
+  pointer-events: none;
+}
+
+.home-content {
+  position: relative; z-index: 1;
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px;
+  padding: 24px;
+}
+
+/* Лого */
+.logo-wrap {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+
+.logo-tv {
+  width: 72px; height: 56px;
+}
+
+.logo-text {
+  font-family: "Nunito", sans-serif;
+  font-weight: 900;
+  font-size: 38px;
+  line-height: 1;
+  letter-spacing: -1px;
+  color: #fff;
+}
+
+.logo-text span {
+  color: var(--blue-lt);
+}
+
+/* Онлайн */
+.online-badge {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 15px;
+  color: var(--text-dim);
+  font-weight: 500;
+  margin-bottom: 20px;
+}
+
+.online-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(76,217,100,0.5);
+  animation: pulse-green 2s ease-out infinite;
+}
+
+@keyframes pulse-green {
+  0%   { box-shadow: 0 0 0 0 rgba(76,217,100,0.5); }
+  70%  { box-shadow: 0 0 0 8px rgba(76,217,100,0); }
+  100% { box-shadow: 0 0 0 0 rgba(76,217,100,0); }
+}
+
+.online-count { color: #fff; font-weight: 700; }
+
+/* Кнопки пол/страна */
+.filter-row {
+  display: flex; gap: 10px;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.btn-filter {
+  flex: 1;
+  background: var(--surface);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-filter:active { opacity: 0.7; }
+.btn-filter .emoji { font-size: 18px; }
+
+/* Большая кнопка СТАРТ */
+.btn-start {
+  width: 100%;
+  background: linear-gradient(135deg, var(--blue), var(--blue-lt));
+  border: none;
+  border-radius: var(--radius);
+  padding: 17px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  font-family: "Nunito", sans-serif;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(26,111,212,0.45);
+  margin-top: 4px;
+}
+.btn-start:active { transform: scale(0.98); }
+.btn-start:disabled { opacity: 0.5; }
+
+/* Дисклеймер */
+.disclaimer {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+
+/* ===== ЭКРАН ЗВОНКА ===== */
+#screenCall {
+  background: #000;
+}
+
+/* Видео собеседника — фон */
+#remoteVideo {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+/* Моё видео — PiP правый верхний угол */
+#localVideo {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  right: 12px;
+  width: 90px; height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid rgba(255,255,255,0.2);
+  transform: scaleX(-1);
+  z-index: 10;
+  background: #111;
+}
+
+/* Шестерня настроек */
+.btn-settings {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 14px;
+  width: 38px; height: 38px;
+  background: rgba(0,0,0,0.45);
+  border: none; border-radius: 50%;
+  color: #fff; font-size: 18px;
+  cursor: pointer; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Статус поиска поверх чёрного */
+.search-overlay {
+  position: absolute; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 18px; z-index: 5;
+}
+.search-overlay[hidden] { display: none !important; }
+
+.search-spinner {
+  width: 52px; height: 52px;
+  border: 3px solid rgba(255,255,255,0.12);
+  border-top-color: var(--blue-lt);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.search-label {
+  font-size: 15px; color: var(--text-dim); font-weight: 500;
+}
+
+/* Нижняя панель во время звонка */
+.call-bottom {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  z-index: 10;
+  padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
+  background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%);
+}
+
+/* Реакции */
+.reactions-row {
+  display: flex; justify-content: center;
+  gap: 4px;
+  padding: 0 16px 10px;
+}
+
+.btn-reaction {
+  background: rgba(0,0,0,0.35);
+  border: none; border-radius: 50%;
+  width: 42px; height: 42px;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s;
+}
+.btn-reaction:active { transform: scale(1.25); }
+
+/* Реакция летит вверх */
+.flying-emoji {
+  position: fixed;
+  font-size: 28px;
+  pointer-events: none;
+  z-index: 99;
+  animation: fly-up 1.4s ease-out forwards;
+}
+@keyframes fly-up {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-200px) scale(0.5); opacity: 0; }
+}
+
+/* Ряд кнопок управления */
+.controls-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px;
+  padding: 0 16px;
+}
+
+.btn-next {
+  flex: 1;
+  background: var(--blue);
+  border: none; border-radius: var(--radius);
+  padding: 15px;
+  color: #fff;
+  font-size: 16px; font-weight: 700;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-next:active { opacity: 0.8; }
+.btn-next:disabled { opacity: 0.45; }
+
+.btn-icon {
+  width: 46px; height: 46px;
+  background: rgba(255,255,255,0.12);
+  border: none; border-radius: 50%;
+  color: #fff; font-size: 18px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn-icon:active { opacity: 0.7; }
+
+/* Плавающая реакция текущего пользователя над кнопками */
+
+/* Попап пол */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 50;
+  display: flex; align-items: flex-end;
+}
+.modal-backdrop[hidden] { display: none !important; }
+
+.modal-sheet {
+  width: 100%;
+  background: #1C2D42;
+  border-radius: 20px 20px 0 0;
+  padding: 20px 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
+}
+
+.modal-title {
+  font-size: 13px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.8px;
+  margin-bottom: 14px; text-align: center;
+}
+
+.modal-option {
+  width: 100%;
+  background: var(--surface);
+  border: 1.5px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius);
+  padding: 15px;
+  color: #fff; font-size: 16px; font-weight: 600;
+  cursor: pointer; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 12px;
+}
+.modal-option:active { opacity: 0.7; }
+.modal-option.selected { border-color: var(--blue-lt); background: rgba(26,111,212,0.2); }
+.modal-option .emoji { font-size: 22px; }
+
+/* Ошибка */
+.error-toast {
+  position: fixed; bottom: 90px; left: 16px; right: 16px;
+  background: rgba(255,59,48,0.9);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-size: 13px; z-index: 99;
+  display: none;
+}
+.error-toast.show { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .online-dot, .search-spinner, .flying-emoji { animation: none; }
+}
 </style>
 </head>
-
 <body>
 
-<h2>Video Chat</h2>
+<!-- СТАРТОВЫЙ ЭКРАН -->
+<div class="screen" id="screenHome">
+  <canvas id="staticCanvas"></canvas>
 
-<button id="start">Start</button>
-<button id="find" disabled>Find</button>
+  <div class="home-content">
 
-<div id="status">Нажми Start, чтобы включить камеру</div>
+    <div class="logo-wrap">
+      <!-- TV-иконка SVG -->
+      <svg class="logo-tv" viewBox="0 0 72 56" fill="none">
+        <rect x="4" y="14" width="64" height="38" rx="5" fill="#1A6FD4"/>
+        <rect x="8" y="18" width="56" height="30" rx="3" fill="#0D1B2E"/>
+        <!-- антенны -->
+        <line x1="24" y1="14" x2="14" y2="3" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="48" y1="14" x2="58" y2="3" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- экран: текст -->
+        <text x="36" y="38" text-anchor="middle" font-family="Nunito,sans-serif" font-weight="900" font-size="11" fill="white">SPIN</text>
+        <!-- ножки -->
+        <rect x="24" y="52" width="8" height="4" rx="2" fill="#1A6FD4"/>
+        <rect x="40" y="52" width="8" height="4" rx="2" fill="#1A6FD4"/>
+        <rect x="20" y="52" width="32" height="3" rx="1.5" fill="#1254A8"/>
+      </svg>
 
-<div>
-  <video id="local" autoplay muted playsinline></video>
-  <video id="remote" autoplay playsinline></video>
+      <div class="logo-text">Spin<span>ny</span></div>
+    </div>
+
+    <div class="online-badge">
+      <span class="online-dot"></span>
+      <span class="online-count" id="onlineCount">–</span>
+      <span>пользователей онлайн</span>
+    </div>
+
+    <div class="filter-row">
+      <button class="btn-filter" id="btnGender" onclick="openGenderModal()">
+        <span class="emoji" id="genderEmoji">🙂</span>
+        <span id="genderLabel">Ваш пол</span>
+      </button>
+      <button class="btn-filter" id="btnCountry">
+        <span class="emoji">🌍</span>
+        <span>Страна</span>
+      </button>
+    </div>
+
+    <button class="btn-start" id="btnStart" onclick="startCamera()">
+      Начать общение
+    </button>
+
+    <p class="disclaimer">
+      Используя видеочат, вы соглашаетесь с правилами.<br>
+      Нарушители будут заблокированы.
+    </p>
+
+  </div>
 </div>
 
-<script src="/socket.io/socket.io.js"></script>
+<!-- ЭКРАН ЗВОНКА -->
+<div class="screen" id="screenCall" hidden>
 
+  <video id="remoteVideo" autoplay playsinline></video>
+  <video id="localVideo" autoplay muted playsinline></video>
+
+  <button class="btn-settings" title="Настройки">⚙️</button>
+
+  <!-- Поверх видео во время поиска -->
+  <div class="search-overlay" id="searchOverlay">
+    <div class="search-spinner"></div>
+    <div class="search-label">Ищем собеседника…</div>
+  </div>
+
+  <div class="call-bottom">
+    <!-- Реакции -->
+    <div class="reactions-row" id="reactionsRow">
+      <button class="btn-reaction" onclick="sendReaction('❤️')">❤️</button>
+      <button class="btn-reaction" onclick="sendReaction('😂')">😂</button>
+      <button class="btn-reaction" onclick="sendReaction('👍')">👍</button>
+      <button class="btn-reaction" onclick="sendReaction('😊')">😊</button>
+      <button class="btn-reaction" onclick="sendReaction('👌')">👌</button>
+      <button class="btn-reaction" onclick="sendReaction('😍')">😍</button>
+      <button class="btn-reaction" onclick="sendReaction('💬')">💬</button>
+    </div>
+
+    <!-- Управление -->
+    <div class="controls-row">
+      <!-- Жалоба -->
+      <button class="btn-icon" id="btnReport" title="Пожаловаться" onclick="doReport()">🚩</button>
+      <!-- Next -->
+      <button class="btn-next" id="btnNext" onclick="doNext()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+        Дальше
+      </button>
+      <!-- Блок -->
+      <button class="btn-icon" id="btnBlock" title="Заблокировать" onclick="doBlock()">🚫</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Попап выбора пола -->
+<div class="modal-backdrop" id="genderModal" hidden onclick="closeGenderModal(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">Ваш пол</div>
+    <button class="modal-option" id="gOpt0" onclick="selectGender(null)">
+      <span class="emoji">🙂</span> Не указывать
+    </button>
+    <button class="modal-option" id="gOpt1" onclick="selectGender('male')">
+      <span class="emoji">👨</span> Мужской
+    </button>
+    <button class="modal-option" id="gOpt2" onclick="selectGender('female')">
+      <span class="emoji">👩</span> Женский
+    </button>
+  </div>
+</div>
+
+<div class="error-toast" id="errorToast"></div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="/socket.io/socket.io.js"></script>
 <script>
+// ─── Telegram ───────────────────────────────────────────
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  try { tg.setHeaderColor("#0D1B2E"); } catch(e){}
+  try { tg.setBackgroundColor("#0D1B2E"); } catch(e){}
+}
+
+// ─── TV Static noise ────────────────────────────────────
+const canvas = document.getElementById("staticCanvas");
+const ctx = canvas.getContext("2d");
+let staticRaf;
+
+function resizeCanvas() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+function drawStatic() {
+  const w = canvas.width, h = canvas.height;
+  const img = ctx.createImageData(w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = Math.random() * 200 | 0;
+    d[i] = d[i+1] = d[i+2] = v;
+    d[i+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  staticRaf = requestAnimationFrame(drawStatic);
+}
+drawStatic();
+
+function stopStatic() { cancelAnimationFrame(staticRaf); }
+
+// ─── Счётчик онлайн (имитация, заменим реальным позже) ──
+let fakeOnline = 12000 + Math.floor(Math.random() * 8000);
+document.getElementById("onlineCount").textContent = fakeOnline.toLocaleString("ru");
+setInterval(() => {
+  fakeOnline += Math.floor(Math.random() * 40) - 20;
+  document.getElementById("onlineCount").textContent = Math.max(1000, fakeOnline).toLocaleString("ru");
+}, 3000);
+
+// ─── Пол ────────────────────────────────────────────────
+let myGender = null;
+
+function openGenderModal() {
+  document.getElementById("genderModal").hidden = false;
+}
+function closeGenderModal(e) {
+  if (e.target === document.getElementById("genderModal")) {
+    document.getElementById("genderModal").hidden = true;
+  }
+}
+function selectGender(g) {
+  myGender = g;
+  const labels = { null: ["🙂","Ваш пол"], male: ["👨","Мужской"], female: ["👩","Женский"] };
+  const [em, lb] = labels[g] || labels[null];
+  document.getElementById("genderEmoji").textContent = em;
+  document.getElementById("genderLabel").textContent = lb;
+  ["gOpt0","gOpt1","gOpt2"].forEach(id => document.getElementById(id).classList.remove("selected"));
+  const map = { null:"gOpt0", male:"gOpt1", female:"gOpt2" };
+  document.getElementById(map[g])?.classList.add("selected");
+  document.getElementById("genderModal").hidden = true;
+}
+
+// ─── Ошибка ─────────────────────────────────────────────
+let errorTimer;
+function showError(msg) {
+  const t = document.getElementById("errorToast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(errorTimer);
+  errorTimer = setTimeout(() => t.classList.remove("show"), 4000);
+}
+
+// ─── Экраны ─────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll(".screen").forEach(s => s.hidden = true);
+  document.getElementById(id).hidden = false;
+}
+
+// ─── Socket & WebRTC ────────────────────────────────────
 const socket = io();
 
-let stream;
-let pc;
-let room;
-let iceServers = [{ urls: "stun:stun.l.google.com:19302" }]; // fallback, перезапишется ниже
+let stream = null;
+let pc = null;
+let room = null;
+let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+let appState = "idle"; // idle | searching | matched
 
-const local = document.getElementById("local");
-const remote = document.getElementById("remote");
-const statusEl = document.getElementById("status");
-const startBtn = document.getElementById("start");
-const findBtn = document.getElementById("find");
+const remoteVideo = document.getElementById("remoteVideo");
+const localVideo  = document.getElementById("localVideo");
+const searchOverlay = document.getElementById("searchOverlay");
+const btnNext = document.getElementById("btnNext");
 
-// Получаем актуальные TURN/STUN сервера с нашего бэкенда (он дёргает Metered)
-fetch("/ice-servers")
-  .then(r => r.json())
-  .then(servers => {
-    if (Array.isArray(servers) && servers.length) {
-      iceServers = servers;
-      console.log("[client] iceServers получены:", servers.map(s => s.urls));
-    }
-  })
-  .catch(e => console.warn("[client] не удалось получить iceServers, использую STUN-фоллбек:", e.message));
+// Получаем TURN-сервера
+fetch("/ice-servers").then(r => r.json()).then(s => {
+  if (Array.isArray(s) && s.length) iceServers = s;
+}).catch(() => {});
 
-function setStatus(text, isError) {
-  statusEl.textContent = text;
-  statusEl.style.color = isError ? "#f55" : "#9f9";
-  console.log("[status]", text);
-}
+socket.on("connect", () => {
+  socket.emit("auth", { initData: tg?.initData || null });
+});
+socket.on("connect_error", e => showError("Ошибка соединения: " + e.message));
 
-// idle -> ready -> searching -> matched
-let appState = "idle";
-
-function setButtonState(state) {
-  appState = state;
-  if (state === "ready") {
-    findBtn.disabled = false;
-    findBtn.textContent = "Find";
-  } else if (state === "searching") {
-    findBtn.disabled = true;
-    findBtn.textContent = "Поиск...";
-  } else if (state === "matched") {
-    findBtn.disabled = false;
-    findBtn.textContent = "Next ➡️";
+// ─── Камера & старт ──────────────────────────────────────
+async function startCamera() {
+  const btn = document.getElementById("btnStart");
+  btn.disabled = true;
+  btn.textContent = "Включаем камеру…";
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localVideo.srcObject = stream;
+    stopStatic();
+    showScreen("screenCall");
+    tg?.enableClosingConfirmation();
+    doFind();
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = "Начать общение";
+    showError("Не удалось получить доступ к камере: " + e.message);
   }
 }
 
-socket.on("connect", () => console.log("[client] connected, id =", socket.id));
-socket.on("connect_error", (err) => {
-  console.error("[client] connect_error:", err.message);
-  setStatus("Ошибка соединения с сервером: " + err.message, true);
-});
-socket.on("disconnect", (reason) => {
-  console.warn("[client] disconnected:", reason);
-  setStatus("Соединение с сервером разорвано: " + reason, true);
-});
+// ─── Поиск ──────────────────────────────────────────────
+function doFind() {
+  appState = "searching";
+  searchOverlay.hidden = false;
+  btnNext.disabled = true;
+  socket.emit("find");
+}
 
-// Собеседник вышел/нажал Next у себя — сервер уже разорвал матч на своей стороне,
-// нам остаётся почистить локальный peer connection и снова встать в поиск
-socket.on("partner-left", () => {
-  console.log("[client] partner-left");
+function doNext() {
+  if (!stream) return;
   cleanupPeer();
   room = null;
-  setStatus("Собеседник отключился. Ищем нового...");
-  setButtonState("searching");
-  socket.emit("find");
+  socket.emit("skip");
+  doFind();
+}
+
+function doBlock() {
+  cleanupPeer();
+  room = null;
+  socket.emit("block");
+  doFind();
+}
+
+function doReport() {
+  if (!room) return;
+  try {
+    const c = document.createElement("canvas");
+    c.width = remoteVideo.videoWidth || 320;
+    c.height = remoteVideo.videoHeight || 240;
+    c.getContext("2d").drawImage(remoteVideo, 0, 0, c.width, c.height);
+    socket.emit("report", { room, imageBase64: c.toDataURL("image/jpeg", 0.85) });
+  } catch(e) {}
+  cleanupPeer();
+  room = null;
+  socket.emit("skip");
+  doFind();
+}
+
+// ─── Матч ───────────────────────────────────────────────
+socket.on("matched", data => {
+  room = data.room;
+  appState = "matched";
+  searchOverlay.hidden = true;
+  btnNext.disabled = false;
+  createPeer(data.initiator);
 });
 
-startBtn.onclick = async () => {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-    local.srcObject = stream;
-    console.log("[client] got camera/mic stream");
-    setStatus("Камера готова. Можно искать собеседника.");
-    setButtonState("ready");
-    startBtn.disabled = true;
-  } catch (e) {
-    console.error("[client] getUserMedia failed:", e.name, e.message);
-    setStatus("Не удалось получить доступ к камере/микрофону: " + e.message, true);
-  }
-};
+socket.on("partner-left", () => {
+  cleanupPeer();
+  room = null;
+  doFind();
+});
 
-findBtn.onclick = () => {
-  if (!stream) {
-    setStatus("Сначала нажми Start — камера не включена", true);
-    return;
-  }
+socket.on("banned", data => {
+  cleanupPeer();
+  showScreen("screenHome");
+  showError(data?.reason || "Вы заблокированы.");
+  tg?.disableClosingConfirmation();
+});
 
-  if (appState === "matched") {
-    // Next: бросаем текущего собеседника и сразу ищем нового
-    console.log("[client] skip current partner");
-    cleanupPeer();
-    room = null;
-    setStatus("Ищем нового собеседника...");
-    setButtonState("searching");
-    socket.emit("skip");
-  } else if (appState === "ready") {
-    console.log("[client] emitting find, socket.connected =", socket.connected);
-    setStatus("Ищем собеседника...");
-    setButtonState("searching");
-    socket.emit("find");
-  }
-};
-
+// ─── WebRTC ─────────────────────────────────────────────
 function cleanupPeer() {
-  if (pc) {
-    pc.close();
-    pc = null;
-  }
-  remote.srcObject = null;
+  if (pc) { pc.close(); pc = null; }
+  remoteVideo.srcObject = null;
 }
 
 function createPeer(initiator) {
-  console.log("[client] creating RTCPeerConnection, initiator =", initiator);
-
-  pc = new RTCPeerConnection({
-    iceServers: iceServers
-  });
-
+  pc = new RTCPeerConnection({ iceServers });
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
-  pc.ontrack = (e) => {
-    console.log("[client] ontrack fired, streams:", e.streams.length);
-    remote.srcObject = e.streams[0];
-    setStatus("Видео собеседника подключено!");
+  pc.ontrack = e => { remoteVideo.srcObject = e.streams[0]; };
+
+  pc.onicecandidate = e => {
+    if (e.candidate) socket.emit("signal", { room, data: { candidate: e.candidate } });
   };
 
   pc.oniceconnectionstatechange = () => {
-    console.log("[client] iceConnectionState:", pc.iceConnectionState);
-    if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
-      setStatus("Соединение установлено!");
-    } else if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
-      setStatus("Соединение прервано (" + pc.iceConnectionState + ")", true);
-    }
-  };
-
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      const type = e.candidate.type || (e.candidate.candidate.match(/typ (\w+)/) || [])[1];
-      console.log("[client] local ICE candidate type:", type);
-      socket.emit("signal", {
-        room,
-        data: { candidate: e.candidate }
-      });
-    }
-  };
-
-  pc.onicecandidateerror = (e) => {
-    console.warn("[client] icecandidateerror:", e.errorText || e);
+    if (pc?.iceConnectionState === "failed") showError("Соединение прервано. Нажмите Дальше.");
   };
 
   if (initiator) {
     pc.createOffer()
       .then(o => pc.setLocalDescription(o))
-      .then(() => {
-        socket.emit("signal", {
-          room,
-          data: { offer: pc.localDescription }
-        });
-      })
-      .catch(e => {
-        console.error("[client] createOffer/setLocalDescription failed:", e);
-        setStatus("Ошибка создания offer: " + e.message, true);
-      });
+      .then(() => socket.emit("signal", { room, data: { offer: pc.localDescription } }))
+      .catch(e => showError("Ошибка: " + e.message));
   }
 }
 
-socket.on("matched", (data) => {
-  console.log("[client] matched!", data);
-
-  if (!stream) {
-    console.error("[client] matched but no local stream available!");
-    setStatus("Матч найден, но камера не была включена. Обновите страницу и нажмите Start заново.", true);
-    return;
-  }
-
-  setStatus("Собеседник найден, устанавливаем соединение...");
-  room = data.room;
-
-  try {
-    createPeer(data.initiator);
-    setButtonState("matched");
-  } catch (e) {
-    console.error("[client] createPeer threw:", e);
-    setStatus("Ошибка при создании соединения: " + e.message, true);
-  }
-});
-
-socket.on("signal", async (data) => {
-  if (!pc) {
-    console.warn("[client] signal received but no pc yet", data);
-    return;
-  }
-
+socket.on("signal", async data => {
+  if (!pc) return;
   try {
     if (data.offer) {
       await pc.setRemoteDescription(data.offer);
       const ans = await pc.createAnswer();
       await pc.setLocalDescription(ans);
-
-      socket.emit("signal", {
-        room,
-        data: { answer: pc.localDescription }
-      });
+      socket.emit("signal", { room, data: { answer: pc.localDescription } });
     }
-
-    if (data.answer) {
-      await pc.setRemoteDescription(data.answer);
-    }
-
+    if (data.answer) await pc.setRemoteDescription(data.answer);
     if (data.candidate) {
-      try { await pc.addIceCandidate(data.candidate); } catch(e) {
-        console.warn("[client] addIceCandidate failed:", e.message);
-      }
+      try { await pc.addIceCandidate(data.candidate); } catch(e) {}
     }
-  } catch (e) {
-    console.error("[client] signal handling failed:", e);
-    setStatus("Ошибка обработки сигнала: " + e.message, true);
-  }
+  } catch(e) {}
 });
-</script>
 
+// ─── Реакции ─────────────────────────────────────────────
+function sendReaction(emoji) {
+  // Летит у нас
+  spawnEmoji(emoji, window.innerWidth / 2, window.innerHeight - 140);
+  // Отправляем партнёру
+  if (room) socket.emit("reaction", { room, emoji });
+}
+
+socket.on("reaction", ({ emoji }) => {
+  // Летит у партнёра (с другой стороны экрана)
+  spawnEmoji(emoji, Math.random() * window.innerWidth * 0.6 + window.innerWidth * 0.2, window.innerHeight * 0.75);
+});
+
+function spawnEmoji(emoji, x, y) {
+  const el = document.createElement("div");
+  el.className = "flying-emoji";
+  el.textContent = emoji;
+  el.style.left = x - 14 + "px";
+  el.style.top  = y + "px";
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1500);
+}
+</script>
 </body>
 </html>
