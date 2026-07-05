@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"/>
 <title>Spinny</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
 :root {
   --blue:    #1A6FD4;
@@ -687,6 +688,43 @@ let room = null;
 let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
 let appState = "idle"; // idle | searching | matched
 
+// ─── Реклама (Adsgram) ──────────────────────────────────
+// blockId получить в личном кабинете https://partner.adsgram.ai после регистрации
+// приложения. Пока стоит заглушка — реклама просто не будет грузиться (SDK
+// уйдёт в catch), ничего не сломается.
+const ADSGRAM_BLOCK_ID = "int-37433";
+const SKIPS_PER_AD = 10;
+let skipsSinceAd = 0;
+let adController = null;
+
+function getAdController() {
+  if (!adController && window.Adsgram) {
+    adController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
+  }
+  return adController;
+}
+
+// Вызывать после каждого skip/report. Показывает интерстишл раз в
+// SKIPS_PER_AD переключений, и только не-Premium пользователям.
+// Всегда резолвится (никогда не бросает) — вызывающий код await'ит перед тем
+// как продолжить поиск следующего собеседника.
+async function maybeShowAd() {
+  if (myPremium) return;
+  skipsSinceAd++;
+  if (skipsSinceAd < SKIPS_PER_AD) return;
+
+  const controller = getAdController();
+  if (!controller) return; // SDK ещё не подгрузился — не блокируем пользователя
+
+  skipsSinceAd = 0;
+  try {
+    await controller.show();
+  } catch (e) {
+    // пользователь закрыл рекламу раньше времени, либо нет заполнения —
+    // это нормально, просто продолжаем как обычно
+  }
+}
+
 const remoteVideo = document.getElementById("remoteVideo");
 const localVideo  = document.getElementById("localVideo");
 const searchOverlay = document.getElementById("searchOverlay");
@@ -729,11 +767,12 @@ function doFind() {
   socket.emit("find");
 }
 
-function doNext() {
+async function doNext() {
   if (!stream) return;
   cleanupPeer();
   room = null;
   socket.emit("skip");
+  await maybeShowAd();
   doFind();
 }
 
@@ -744,7 +783,7 @@ function doBlock() {
   doFind();
 }
 
-function doReport() {
+async function doReport() {
   if (!room) return;
   try {
     const c = document.createElement("canvas");
@@ -756,6 +795,7 @@ function doReport() {
   cleanupPeer();
   room = null;
   socket.emit("skip");
+  await maybeShowAd();
   doFind();
 }
 
