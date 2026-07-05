@@ -661,12 +661,14 @@ function selectWantGender(g) {
 
 // ─── Ошибка ─────────────────────────────────────────────
 let errorTimer;
-function showError(msg) {
+function showError(msg, persistent = false) {
   const t = document.getElementById("errorToast");
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(errorTimer);
-  errorTimer = setTimeout(() => t.classList.remove("show"), 4000);
+  if (!persistent) {
+    errorTimer = setTimeout(() => t.classList.remove("show"), 4000);
+  }
 }
 
 // ─── Экраны ─────────────────────────────────────────────
@@ -777,7 +779,7 @@ socket.on("banned", data => {
   tg?.disableClosingConfirmation();
 
   const reason = data?.reason || "Ваш аккаунт заблокирован за нарушение правил.";
-  showError(reason);
+  showError(reason, true);
 
   // Блокируем кнопку старта
   document.getElementById("btnStart").disabled = true;
@@ -900,6 +902,8 @@ socket.on("premium-granted", ({ days }) => {
 socket.on("invoice-sent", ({ message }) => {
   showError("📨 " + message);
 });
+
+socket.on("error-msg", msg => showError(msg));
 
 function sendFilters() {
   socket.emit("set-gender", { gender: myGender, wantGender: myWantGender });

@@ -362,6 +362,7 @@ app.post("/tg-webhook", async (req, res) => {
       // Уведомляем клиента если онлайн
       for (const [sockId, user] of telegramUserOf.entries()) {
         if (user.id === telegramId) {
+          bannedSockets.delete(sockId);
           io.to(sockId).emit("unbanned");
           break;
         }
@@ -641,6 +642,14 @@ app.post("/admin/unban", adminAuth, async (req, res) => {
   const { telegramId } = req.body;
   if (!telegramId) return res.status(400).send("telegramId обязателен");
   if (db) await db.query("DELETE FROM bans WHERE telegram_id = $1", [telegramId]);
+  // Снимаем флаг и уведомляем клиента если он сейчас онлайн
+  for (const [sockId, user] of telegramUserOf.entries()) {
+    if (user.id === telegramId) {
+      bannedSockets.delete(sockId);
+      io.to(sockId).emit("unbanned");
+      break;
+    }
+  }
   console.log("[admin] ручной разбан:", telegramId);
   res.json({ ok: true });
 });
@@ -671,6 +680,7 @@ app.get("/ice-servers", async (req, res) => {
 let matchLock = false; // ГЛОБАЛЬНЫЙ — защищает от параллельных tryMatch
 const partners = new Map();
 const roomOf = new Map();
+const bannedSockets = new Set(); // сокеты забаненных юзеров — оставляем на связи, чтобы могли оплатить разбан
 const telegramUserOf = new Map();
 
 // Очереди ожидания: язык -> socketId (один ожидающий на язык)
@@ -729,8 +739,11 @@ io.on("connection", (socket) => {
 
       if (await isBanned(user.id)) {
         console.log("[auth] ЗАБАНЕН:", user.id);
+        bannedSockets.add(socket.id);
         socket.emit("banned", { reason: "Вы заблокированы за нарушение правил." });
-        setTimeout(() => socket.disconnect(true), 500);
+        // НЕ отключаем сокет — иначе клиент уйдёт в цикл reconnect→auth→disconnect
+        // и не успеет отправить "buy-unban" / получить "invoice-sent" в ответ.
+        // Просто не даём забаненному искать собеседников (см. обработчик "find").
         return;
       }
 
@@ -929,6 +942,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("find", async () => {    console.log("[find]", socket.id);
+    if (bannedSockets.has(socket.id)) {
+      socket.emit("banned", { reason: "Вы заблокированы за нарушение правил." });
+      return;
+    }
     await tryMatch();
   });
 
@@ -1067,6 +1084,7 @@ io.on("connection", (socket) => {
     removeFromQueues(socket.id);
     telegramUserOf.delete(socket.id);
     userFilters.delete(socket.id);
+    bannedSockets.delete(socket.id);
     clearMatch(socket.id, "disconnect:" + reason);
   });
 });
