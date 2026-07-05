@@ -54,11 +54,19 @@ async function initDb() {
       nudity_score    REAL,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS blocks (
+      blocker_tg_id   BIGINT NOT NULL,
+      blocked_tg_id   BIGINT NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (blocker_tg_id, blocked_tg_id)
+    );
   `);
 
   // Индекс ускоряет проверку бана при каждом подключении
   await db.query(`
     CREATE INDEX IF NOT EXISTS bans_telegram_id_idx ON bans(telegram_id);
+    CREATE INDEX IF NOT EXISTS blocks_blocker_idx ON blocks(blocker_tg_id);
   `);
 
   console.log("[db] подключено и схема готова");
@@ -110,6 +118,28 @@ async function saveReport({ reporterTgId, offenderTgId, verdict, nudityScore }) 
     "INSERT INTO reports (reporter_tg_id, offender_tg_id, verdict, nudity_score) VALUES ($1,$2,$3,$4)",
     [reporterTgId || null, offenderTgId || null, verdict, nudityScore ?? null]
   );
+}
+
+async function blockUser(blockerTgId, blockedTgId) {
+  if (!blockerTgId || !blockedTgId || !db) return;
+  await db.query(
+    "INSERT INTO blocks (blocker_tg_id, blocked_tg_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [blockerTgId, blockedTgId]
+  );
+  console.log("[block] (db)", blockerTgId, "заблокировал", blockedTgId);
+}
+
+// Возвращает true если хотя бы один из двух заблокировал другого
+async function isBlockedBetween(tgIdA, tgIdB) {
+  if (!tgIdA || !tgIdB || !db) return false;
+  const r = await db.query(
+    `SELECT 1 FROM blocks
+     WHERE (blocker_tg_id = $1 AND blocked_tg_id = $2)
+        OR (blocker_tg_id = $2 AND blocked_tg_id = $1)
+     LIMIT 1`,
+    [tgIdA, tgIdB]
+  );
+  return r.rowCount > 0;
 }
 
 // ---------- Telegram initData верификация ----------
@@ -171,11 +201,12 @@ app.get("/ice-servers", async (req, res) => {
 
 // ---------- Матчинг ----------
 let waiting = null;
+let matchLock = false; // ГЛОБАЛЬНЫЙ — защищает от параллельных tryMatch между разными сокетами
 const partners = new Map();
 const roomOf = new Map();
-const telegramUserOf = new Map(); // socketId -> { id, language_code, ... }
+const telegramUserOf = new Map();
 
-function clearMatch(socketId) {
+function clearMatch(socketId, reason = "unknown") {
   const partnerId = partners.get(socketId);
   partners.delete(socketId);
   roomOf.delete(socketId);
@@ -183,8 +214,8 @@ function clearMatch(socketId) {
   if (partnerId) {
     partners.delete(partnerId);
     roomOf.delete(partnerId);
+    console.log("[partner-left] причина:", reason, "| уведомляем:", partnerId);
     io.to(partnerId).emit("partner-left");
-    console.log("[partner-left] notified", partnerId);
   }
 }
 
@@ -218,43 +249,85 @@ io.on("connection", (socket) => {
     }
   });
 
-  function tryMatch() {
-    if (waiting && waiting !== socket.id && io.sockets.sockets.has(waiting)) {
+  async function tryMatch() {
+    if (matchLock) {
+      if (!waiting) waiting = socket.id;
+      return;
+    }
+    if (!waiting || waiting === socket.id || !io.sockets.sockets.has(waiting)) {
+      waiting = socket.id;
+      console.log("[waiting]", socket.id);
+      return;
+    }
+
+    matchLock = true;
+    try {
       const a = waiting;
       const b = socket.id;
-      const room = `${a}#${b}`;
 
+      const tgA = telegramUserOf.get(a)?.id ?? null;
+      const tgB = telegramUserOf.get(b)?.id ?? null;
+
+      if (await isBlockedBetween(tgA, tgB)) {
+        console.log("[match] пропускаем пару", a, "<->", b, "— в блок-листе");
+        waiting = a;
+        socket.emit("waiting");
+        return;
+      }
+
+      const room = `${a}#${b}`;
       const socketA = io.sockets.sockets.get(a);
-      socketA?.join(room);
+      if (!socketA) {
+        waiting = socket.id;
+        console.log("[waiting] socketA пропал, переставляем", socket.id);
+        return;
+      }
+
+      socketA.join(room);
       socket.join(room);
 
       partners.set(a, b);
       partners.set(b, a);
       roomOf.set(a, room);
       roomOf.set(b, room);
+      waiting = null;
 
       console.log("[match]", a, "<->", b);
-
       io.to(a).emit("matched", { room, initiator: true });
       io.to(b).emit("matched", { room, initiator: false });
-
-      waiting = null;
-    } else {
-      waiting = socket.id;
-      console.log("[waiting]", socket.id);
+    } finally {
+      matchLock = false;
     }
   }
 
-  socket.on("find", () => {
+  socket.on("find", async () => {
     console.log("[find]", socket.id);
-    tryMatch();
+    await tryMatch();
   });
 
-  socket.on("skip", () => {
+  socket.on("skip", async () => {
     console.log("[skip]", socket.id);
-    clearMatch(socket.id);
+    clearMatch(socket.id, "skip");
     if (waiting === socket.id) waiting = null;
-    tryMatch();
+    await tryMatch();
+  });
+
+  // Пользователь блокирует текущего собеседника — они больше не будут мэтчиться
+  socket.on("block", async () => {
+    const partnerId = partners.get(socket.id);
+    const blockerTgId = telegramUserOf.get(socket.id)?.id ?? null;
+    const blockedTgId = telegramUserOf.get(partnerId)?.id ?? null;
+
+    console.log("[block]", socket.id, "блокирует", partnerId);
+
+    if (blockerTgId && blockedTgId) {
+      await blockUser(blockerTgId, blockedTgId);
+    }
+
+    // После блокировки — уходим от этого собеседника и ищем нового
+    clearMatch(socket.id, "skip");
+    if (waiting === socket.id) waiting = null;
+    await tryMatch();
   });
 
   socket.on("report", async ({ imageBase64 }) => {
@@ -300,7 +373,7 @@ io.on("connection", (socket) => {
         await banUser(offenderTgId, "nudity — auto ban after report");
         io.to(partnerId).emit("banned", { reason: "Жалоба подтверждена: обнаружен недопустимый контент." });
         io.sockets.sockets.get(partnerId)?.disconnect(true);
-        clearMatch(socket.id);
+        clearMatch(socket.id, "skip");
       }
     } catch (e) {
       console.error("[report] ошибка:", e.message);
@@ -312,11 +385,21 @@ io.on("connection", (socket) => {
     socket.to(room).emit("signal", data);
   });
 
+  socket.on("reaction", ({ emoji }) => {
+    const room = roomOf.get(socket.id);
+    console.log("[reaction]", socket.id, "->", emoji, "| roomOf:", room, "| partners:", partners.get(socket.id));
+    if (!room) {
+      console.log("[reaction] IGNORED — нет активной комнаты для", socket.id);
+      return;
+    }
+    socket.to(room).emit("reaction", { emoji });
+  });
+
   socket.on("disconnect", (reason) => {
     console.log("[disconnect]", socket.id, reason);
     if (waiting === socket.id) waiting = null;
     telegramUserOf.delete(socket.id);
-    clearMatch(socket.id);
+    clearMatch(socket.id, "disconnect:" + reason);
   });
 });
 
@@ -334,4 +417,3 @@ initDb()
       console.log("SERVER RUNNING (без БД)");
     });
   });
-  

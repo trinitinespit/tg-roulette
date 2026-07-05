@@ -234,7 +234,7 @@ html, body {
 .call-bottom {
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  z-index: 10;
+  z-index: 99999;
   padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
   background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%);
 }
@@ -260,14 +260,15 @@ html, body {
 /* Реакция летит вверх */
 .flying-emoji {
   position: fixed;
-  font-size: 28px;
+  font-size: 52px;
   pointer-events: none;
-  z-index: 99;
-  animation: fly-up 1.4s ease-out forwards;
+  z-index: 9999;
+  animation: fly-up 1.8s ease-out forwards;
 }
 @keyframes fly-up {
-  0%   { transform: translateY(0) scale(1); opacity: 1; }
-  100% { transform: translateY(-200px) scale(0.5); opacity: 0; }
+  0%   { transform: translateY(0) scale(1.2); opacity: 1; }
+  60%  { opacity: 1; }
+  100% { transform: translateY(-320px) scale(0.6); opacity: 0; }
 }
 
 /* Ряд кнопок управления */
@@ -496,7 +497,7 @@ html, body {
 </div>
 
 <div class="error-toast" id="errorToast"></div>
-<div id="emojiLayer" style="position:fixed;inset:0;pointer-events:none;z-index:99;overflow:hidden;"></div>
+<div id="emojiLayer" style="position:fixed;inset:0;pointer-events:none;z-index:1000;"></div>
 
 <!-- Попап выбора страны -->
 <div class="modal-backdrop" id="countryModal" hidden onclick="closeCountryModal(event)">
@@ -816,11 +817,17 @@ function closeRulesModal(e) {
 
 // ─── Реакции ─────────────────────────────────────────────
 function sendReaction(emoji) {
+  console.log("[reaction] appState:", appState, "| emoji:", emoji);
   spawnEmoji(emoji, window.innerWidth / 2, window.innerHeight - 140);
-  if (room) socket.emit("reaction", { room, emoji });
+  if (appState === "matched") {
+    socket.emit("reaction", { emoji });
+  } else {
+    alert("DEBUG: реакция не отправлена, appState=" + appState);
+  }
 }
 
 socket.on("reaction", ({ emoji }) => {
+  console.log("[reaction] получено от партнёра:", emoji);
   spawnEmoji(emoji,
     Math.random() * window.innerWidth * 0.6 + window.innerWidth * 0.2,
     window.innerHeight * 0.75
@@ -828,16 +835,14 @@ socket.on("reaction", ({ emoji }) => {
 });
 
 function spawnEmoji(emoji, x, y) {
-  const layer = document.getElementById("emojiLayer");
   const el = document.createElement("div");
   el.className = "flying-emoji";
   el.textContent = emoji;
-  // Координаты относительно layer (fixed, inset:0 — совпадает с viewport)
-  el.style.left = (x - 14) + "px";
+  // position: fixed из CSS — координаты относительно viewport
+  el.style.left = (x - 26) + "px";
   el.style.top  = y + "px";
-  el.style.position = "absolute";
-  layer.appendChild(el);
-  setTimeout(() => el.remove(), 1500);
+  document.getElementById("emojiLayer").appendChild(el);
+  setTimeout(() => el.remove(), 1900);
 }
 </script>
 </body>
