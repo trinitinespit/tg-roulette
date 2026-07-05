@@ -424,7 +424,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   if (!db) return res.status(503).send("БД недоступна");
 
   try {
-    const [bans, reports, users, unban] = await Promise.all([
+    const [bans, reports, users, unban, blocks] = await Promise.all([
     db.query(`SELECT b.telegram_id, b.reason, b.banned_at,
               u.username, u.first_name
               FROM bans b LEFT JOIN users u ON u.telegram_id = b.telegram_id
@@ -441,6 +441,12 @@ app.get("/admin", adminAuth, async (req, res) => {
     db.query(`SELECT ur.*, u.username FROM unban_requests ur
               LEFT JOIN users u ON u.telegram_id = ur.telegram_id
               ORDER BY ur.created_at DESC LIMIT 50`),
+    db.query(`SELECT bl.blocker_tg_id, bl.blocked_tg_id, bl.created_at,
+              bu.username as blocker_name, ou.username as blocked_name
+              FROM blocks bl
+              LEFT JOIN users bu ON bu.telegram_id = bl.blocker_tg_id
+              LEFT JOIN users ou ON ou.telegram_id = bl.blocked_tg_id
+              ORDER BY bl.created_at DESC LIMIT 200`),
   ]);
 
   // Считаем онлайн прямо из памяти сервера
@@ -500,6 +506,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   <div class="tab" onclick="showTab('reports')">Репорты (${reports.rowCount})</div>
   <div class="tab" onclick="showTab('users')">Пользователи (${users.rowCount})</div>
   <div class="tab" onclick="showTab('unbans')">Разблокировки (${unban.rowCount})</div>
+  <div class="tab" onclick="showTab('blocks')">Блоки (${blocks.rowCount})</div>
 </div>
 
 <div class="content">
@@ -584,6 +591,25 @@ app.get("/admin", adminAuth, async (req, res) => {
     </table>`}
   </div>
 
+  <!-- Блоки -->
+  <div class="section" id="tab-blocks">
+    <div class="action-row">
+      <input type="number" id="unblockIdInput" placeholder="Telegram ID — снять все блоки этого юзера"/>
+      <button class="btn" onclick="manualUnblockAll()">Снять все блоки для ID</button>
+    </div>
+    ${blocks.rowCount === 0 ? '<div class="empty">Блокировок нет 🎉</div>' : `
+    <table>
+      <tr><th>Кто заблокировал</th><th>Кого заблокировал</th><th>Дата</th><th>Действие</th></tr>
+      ${blocks.rows.map(b => `
+      <tr>
+        <td>${b.blocker_tg_id} ${b.blocker_name ? '@'+b.blocker_name : ''}</td>
+        <td>${b.blocked_tg_id} ${b.blocked_name ? '@'+b.blocked_name : ''}</td>
+        <td>${new Date(b.created_at).toLocaleString('ru')}</td>
+        <td><button class="unban-btn" onclick="manualUnblockPair(${b.blocker_tg_id}, ${b.blocked_tg_id})">Снять эту пару</button></td>
+      </tr>`).join('')}
+    </table>`}
+  </div>
+
 </div>
 
 <script>
@@ -617,6 +643,30 @@ async function manualUnban(id) {
     body: JSON.stringify({ telegramId: id })
   });
   if (r.ok) { alert('Разбанен'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function manualUnblockAll() {
+  const id = document.getElementById('unblockIdInput').value;
+  if (!id) return alert('Введите Telegram ID');
+  if (!confirm('Снять все блоки для ' + id + ' (в обе стороны)?')) return;
+  const r = await fetch('/admin/unblock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ telegramId: parseInt(id) })
+  });
+  if (r.ok) { alert('Блоки сняты'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function manualUnblockPair(blockerId, blockedId) {
+  if (!confirm('Снять блок ' + blockerId + ' → ' + blockedId + '?')) return;
+  const r = await fetch('/admin/unblock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ blockerTgId: blockerId, blockedTgId: blockedId })
+  });
+  if (r.ok) { alert('Блок снят'); location.reload(); }
   else alert('Ошибка: ' + await r.text());
 }
 </script>
@@ -659,6 +709,36 @@ app.post("/admin/unban", adminAuth, async (req, res) => {
   }
   console.log("[admin] ручной разбан:", telegramId);
   res.json({ ok: true });
+});
+
+// Снятие блокировки через админку.
+// Либо { telegramId } — снимает ВСЕ блоки этого юзера (в обе стороны, как блокировщик и как заблокированный),
+// либо { blockerTgId, blockedTgId } — снимает конкретную пару.
+app.post("/admin/unblock", adminAuth, async (req, res) => {
+  if (!db) return res.status(503).send("БД недоступна");
+  const { telegramId, blockerTgId, blockedTgId } = req.body;
+
+  try {
+    if (blockerTgId && blockedTgId) {
+      await db.query(
+        "DELETE FROM blocks WHERE blocker_tg_id = $1 AND blocked_tg_id = $2",
+        [blockerTgId, blockedTgId]
+      );
+      console.log("[admin] снят блок:", blockerTgId, "->", blockedTgId);
+    } else if (telegramId) {
+      await db.query(
+        "DELETE FROM blocks WHERE blocker_tg_id = $1 OR blocked_tg_id = $1",
+        [telegramId]
+      );
+      console.log("[admin] сняты все блоки для:", telegramId);
+    } else {
+      return res.status(400).send("Нужен telegramId, либо blockerTgId + blockedTgId");
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[admin] ошибка unblock:", e.message);
+    res.status(500).send("Ошибка: " + e.message);
+  }
 });
 
 app.get("/ice-servers", async (req, res) => {
