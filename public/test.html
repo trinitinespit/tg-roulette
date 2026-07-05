@@ -817,13 +817,8 @@ function closeRulesModal(e) {
 
 // ─── Реакции ─────────────────────────────────────────────
 function sendReaction(emoji) {
-  console.log("[reaction] appState:", appState, "| emoji:", emoji);
   spawnEmoji(emoji, window.innerWidth / 2, window.innerHeight - 140);
-  if (appState === "matched") {
-    socket.emit("reaction", { emoji });
-  } else {
-    alert("DEBUG: реакция не отправлена, appState=" + appState);
-  }
+  if (appState === "matched") socket.emit("reaction", { emoji });
 }
 
 socket.on("reaction", ({ emoji }) => {
