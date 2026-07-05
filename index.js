@@ -72,6 +72,12 @@ async function initDb() {
     );
   `);
 
+  // Миграции — добавляем колонки если их нет (безопасно для существующих таблиц)
+  await db.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
+  `).catch(e => console.warn("[db] миграция users:", e.message));
+
   // Индекс ускоряет проверку бана при каждом подключении
   await db.query(`
     CREATE INDEX IF NOT EXISTS bans_telegram_id_idx ON bans(telegram_id);
