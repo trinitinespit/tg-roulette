@@ -369,6 +369,244 @@ app.post("/tg-webhook", async (req, res) => {
   }
 });
 
+// ---------- Админка ----------
+// Защита через ADMIN_SECRET из env — добавь в Render переменную ADMIN_SECRET=любой_пароль
+function adminAuth(req, res, next) {
+  const secret = process.env.ADMIN_SECRET;
+  if (!secret) return res.status(503).send("ADMIN_SECRET не настроен");
+  const token = req.headers["x-admin-secret"] || req.query.secret;
+  if (token !== secret) return res.status(401).send("Неверный ключ");
+  next();
+}
+
+app.get("/admin", adminAuth, async (req, res) => {
+  if (!db) return res.status(503).send("БД недоступна");
+
+  const [bans, reports, users, unban] = await Promise.all([
+    db.query(`SELECT b.telegram_id, b.reason, b.banned_at,
+              u.username, u.first_name
+              FROM bans b LEFT JOIN users u ON u.telegram_id = b.telegram_id
+              ORDER BY b.banned_at DESC LIMIT 100`),
+    db.query(`SELECT r.*, 
+              ru.username as reporter_name,
+              ou.username as offender_name
+              FROM reports r
+              LEFT JOIN users ru ON ru.telegram_id = r.reporter_tg_id
+              LEFT JOIN users ou ON ou.telegram_id = r.offender_tg_id
+              ORDER BY r.created_at DESC LIMIT 100`),
+    db.query(`SELECT telegram_id, username, first_name, is_premium, premium_until, gender, last_seen_at
+              FROM users ORDER BY last_seen_at DESC LIMIT 100`),
+    db.query(`SELECT ur.*, u.username FROM unban_requests ur
+              LEFT JOIN users u ON u.telegram_id = ur.telegram_id
+              ORDER BY ur.created_at DESC LIMIT 50`),
+  ]);
+
+  // Считаем онлайн прямо из памяти сервера
+  const onlineCount = telegramUserOf.size;
+
+  res.send(`<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Spinny Admin</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; font-size: 14px; }
+  .header { background: #1e293b; padding: 20px 24px; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .badge { background: #22c55e; color: #000; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 700; }
+  .tabs { display: flex; gap: 2px; background: #1e293b; padding: 0 24px; border-bottom: 1px solid #334155; }
+  .tab { padding: 12px 20px; cursor: pointer; font-weight: 600; color: #94a3b8; border-bottom: 2px solid transparent; font-size: 13px; }
+  .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+  .content { padding: 24px; }
+  .section { display: none; }
+  .section.active { display: block; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat { background: #1e293b; border-radius: 12px; padding: 16px; text-align: center; }
+  .stat-num { font-size: 28px; font-weight: 800; color: #38bdf8; }
+  .stat-label { font-size: 11px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }
+  th { background: #0f172a; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }
+  td { padding: 10px 14px; border-top: 1px solid #1e293b; vertical-align: top; }
+  tr:hover td { background: rgba(56,189,248,0.04); }
+  .verdict-violation { color: #f87171; font-weight: 600; }
+  .verdict-csam { color: #ef4444; font-weight: 800; background: rgba(239,68,68,0.15); padding: 2px 8px; border-radius: 4px; }
+  .verdict-clean { color: #4ade80; }
+  .verdict-error { color: #94a3b8; }
+  .ban-btn { background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .unban-btn { background: #22c55e; border: none; color: #000; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .premium-badge { background: #fbbf24; color: #000; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 700; }
+  .empty { text-align: center; color: #475569; padding: 40px; }
+  input { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 8px 12px; border-radius: 8px; font-size: 13px; width: 300px; }
+  .action-row { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+  .btn { background: #334155; border: none; color: #e2e8f0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn:hover { background: #475569; }
+  .btn-danger { background: #ef4444; color: white; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚙️ Spinny Admin</h1>
+  <span class="badge">🟢 ${onlineCount} онлайн</span>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('overview')">Обзор</div>
+  <div class="tab" onclick="showTab('bans')">Баны (${bans.rowCount})</div>
+  <div class="tab" onclick="showTab('reports')">Репорты (${reports.rowCount})</div>
+  <div class="tab" onclick="showTab('users')">Пользователи (${users.rowCount})</div>
+  <div class="tab" onclick="showTab('unbans')">Разблокировки (${unban.rowCount})</div>
+</div>
+
+<div class="content">
+
+  <!-- Обзор -->
+  <div class="section active" id="tab-overview">
+    <div class="stats">
+      <div class="stat"><div class="stat-num">${onlineCount}</div><div class="stat-label">Онлайн сейчас</div></div>
+      <div class="stat"><div class="stat-num">${users.rowCount}</div><div class="stat-label">Юзеров (100)</div></div>
+      <div class="stat"><div class="stat-num">${bans.rowCount}</div><div class="stat-label">Банов</div></div>
+      <div class="stat"><div class="stat-num">${reports.rows.filter(r=>r.verdict==='violation'||r.verdict==='csam').length}</div><div class="stat-label">Нарушений</div></div>
+      <div class="stat"><div class="stat-num">${reports.rows.filter(r=>r.verdict==='csam').length}</div><div class="stat-label">CSAM</div></div>
+      <div class="stat"><div class="stat-num">${users.rows.filter(u=>u.is_premium).length}</div><div class="stat-label">Премиум</div></div>
+      <div class="stat"><div class="stat-num">${unban.rowCount}</div><div class="stat-label">Разблокировок</div></div>
+    </div>
+  </div>
+
+  <!-- Баны -->
+  <div class="section" id="tab-bans">
+    <div class="action-row">
+      <input type="number" id="banIdInput" placeholder="Telegram ID для бана"/>
+      <button class="btn btn-danger" onclick="manualBan()">Забанить вручную</button>
+    </div>
+    ${bans.rowCount === 0 ? '<div class="empty">Банов нет 🎉</div>' : `
+    <table>
+      <tr><th>TG ID</th><th>Имя</th><th>Причина</th><th>Дата</th><th>Действие</th></tr>
+      ${bans.rows.map(b => `
+      <tr>
+        <td>${b.telegram_id}</td>
+        <td>${b.first_name || ''} @${b.username || '—'}</td>
+        <td style="max-width:200px;word-break:break-word">${b.reason || '—'}</td>
+        <td>${new Date(b.banned_at).toLocaleString('ru')}</td>
+        <td><button class="unban-btn" onclick="manualUnban(${b.telegram_id})">Разбанить</button></td>
+      </tr>`).join('')}
+    </table>`}
+  </div>
+
+  <!-- Репорты -->
+  <div class="section" id="tab-reports">
+    ${reports.rowCount === 0 ? '<div class="empty">Репортов нет</div>' : `
+    <table>
+      <tr><th>Жалобщик</th><th>Нарушитель</th><th>Вердикт</th><th>Score</th><th>Дата</th></tr>
+      ${reports.rows.map(r => `
+      <tr>
+        <td>@${r.reporter_name || r.reporter_tg_id || '—'}</td>
+        <td>@${r.offender_name || r.offender_tg_id || '—'}</td>
+        <td><span class="verdict-${r.verdict}">${r.verdict}</span></td>
+        <td>${r.nudity_score != null ? (r.nudity_score*100).toFixed(0)+'%' : '—'}</td>
+        <td>${new Date(r.created_at).toLocaleString('ru')}</td>
+      </tr>`).join('')}
+    </table>`}
+  </div>
+
+  <!-- Пользователи -->
+  <div class="section" id="tab-users">
+    <table>
+      <tr><th>TG ID</th><th>Имя</th><th>Статус</th><th>Пол</th><th>Последний вход</th></tr>
+      ${users.rows.map(u => `
+      <tr>
+        <td>${u.telegram_id}</td>
+        <td>${u.first_name || ''} @${u.username || '—'}</td>
+        <td>${u.is_premium ? '<span class="premium-badge">⭐ Premium</span>' : 'Free'}</td>
+        <td>${u.gender || '—'}</td>
+        <td>${new Date(u.last_seen_at).toLocaleString('ru')}</td>
+      </tr>`).join('')}
+    </table>
+  </div>
+
+  <!-- Разблокировки -->
+  <div class="section" id="tab-unbans">
+    ${unban.rowCount === 0 ? '<div class="empty">Разблокировок нет</div>' : `
+    <table>
+      <tr><th>TG ID</th><th>Имя</th><th>Stars</th><th>Charge ID</th><th>Дата</th></tr>
+      ${unban.rows.map(u => `
+      <tr>
+        <td>${u.telegram_id}</td>
+        <td>@${u.username || '—'}</td>
+        <td>${u.stars_paid} ⭐</td>
+        <td style="font-size:11px;color:#64748b">${u.charge_id}</td>
+        <td>${new Date(u.created_at).toLocaleString('ru')}</td>
+      </tr>`).join('')}
+    </table>`}
+  </div>
+
+</div>
+
+<script>
+const SECRET = new URLSearchParams(location.search).get('secret') || '';
+
+function showTab(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+async function manualBan() {
+  const id = document.getElementById('banIdInput').value;
+  if (!id) return alert('Введите Telegram ID');
+  if (!confirm('Забанить ' + id + '?')) return;
+  const r = await fetch('/admin/ban', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ telegramId: parseInt(id), reason: 'manual ban' })
+  });
+  if (r.ok) { alert('Забанен'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function manualUnban(id) {
+  if (!confirm('Разбанить ' + id + '?')) return;
+  const r = await fetch('/admin/unban', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ telegramId: id })
+  });
+  if (r.ok) { alert('Разбанен'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+</script>
+</body>
+</html>`);
+});
+
+// Ручной бан через админку
+app.post("/admin/ban", adminAuth, async (req, res) => {
+  const { telegramId, reason } = req.body;
+  if (!telegramId) return res.status(400).send("telegramId обязателен");
+  await banUser(telegramId, reason || "manual ban");
+  // Кикаем если онлайн
+  for (const [sockId, user] of telegramUserOf.entries()) {
+    if (user.id === telegramId) {
+      io.to(sockId).emit("banned", { reason: "Ваш аккаунт заблокирован администратором." });
+      io.sockets.sockets.get(sockId)?.disconnect(true);
+      break;
+    }
+  }
+  res.json({ ok: true });
+});
+
+// Ручной разбан через админку
+app.post("/admin/unban", adminAuth, async (req, res) => {
+  const { telegramId } = req.body;
+  if (!telegramId) return res.status(400).send("telegramId обязателен");
+  if (db) await db.query("DELETE FROM bans WHERE telegram_id = $1", [telegramId]);
+  console.log("[admin] ручной разбан:", telegramId);
+  res.json({ ok: true });
+});
+
 app.get("/ice-servers", async (req, res) => {
   const appName = process.env.METERED_APP_NAME;
   const apiKey = process.env.METERED_API_KEY;
