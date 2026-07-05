@@ -200,11 +200,29 @@ app.get("/ice-servers", async (req, res) => {
 });
 
 // ---------- Матчинг ----------
-let waiting = null;
-let matchLock = false; // ГЛОБАЛЬНЫЙ — защищает от параллельных tryMatch между разными сокетами
+let matchLock = false; // ГЛОБАЛЬНЫЙ — защищает от параллельных tryMatch
 const partners = new Map();
 const roomOf = new Map();
 const telegramUserOf = new Map();
+
+// Очереди ожидания: язык -> socketId (один ожидающий на язык)
+// Если не нашли своего языка за LANG_TIMEOUT мс — fallback на любой язык
+const waitingByLang = new Map(); // language_code -> socketId
+let waitingAny = null;           // fallback-очередь (любой язык)
+const LANG_TIMEOUT = 10000;      // 10 сек ждём своего языка, потом расширяем
+const langFallbackTimers = new Map(); // socketId -> timer
+
+function getLang(socketId) {
+  return telegramUserOf.get(socketId)?.language_code ?? null;
+}
+
+function removeFromQueues(socketId) {
+  const lang = getLang(socketId);
+  if (lang && waitingByLang.get(lang) === socketId) waitingByLang.delete(lang);
+  if (waitingAny === socketId) waitingAny = null;
+  const t = langFallbackTimers.get(socketId);
+  if (t) { clearTimeout(t); langFallbackTimers.delete(socketId); }
+}
 
 function clearMatch(socketId, reason = "unknown") {
   const partnerId = partners.get(socketId);
@@ -249,52 +267,90 @@ io.on("connection", (socket) => {
     }
   });
 
+  async function doMatch(a, b) {
+    // Общая логика создания матча между двумя сокетами
+    const tgA = telegramUserOf.get(a)?.id ?? null;
+    const tgB = telegramUserOf.get(b)?.id ?? null;
+
+    if (await isBlockedBetween(tgA, tgB)) {
+      console.log("[match] пропускаем пару", a, "<->", b, "— в блок-листе");
+      return false;
+    }
+
+    const socketA = io.sockets.sockets.get(a);
+    const socketB = io.sockets.sockets.get(b);
+    if (!socketA || !socketB) return false;
+
+    const room = `${a}#${b}`;
+    socketA.join(room);
+    socketB.join(room);
+
+    partners.set(a, b);
+    partners.set(b, a);
+    roomOf.set(a, room);
+    roomOf.set(b, room);
+
+    const langA = getLang(a) || "any";
+    const langB = getLang(b) || "any";
+    console.log("[match]", a, `(${langA})`, "<->", b, `(${langB})`);
+
+    io.to(a).emit("matched", { room, initiator: true });
+    io.to(b).emit("matched", { room, initiator: false });
+    return true;
+  }
+
   async function tryMatch() {
-    if (matchLock) {
-      if (!waiting) waiting = socket.id;
-      return;
-    }
-    if (!waiting || waiting === socket.id || !io.sockets.sockets.has(waiting)) {
-      waiting = socket.id;
-      console.log("[waiting]", socket.id);
-      return;
-    }
-
+    if (matchLock) return;
     matchLock = true;
+
     try {
-      const a = waiting;
-      const b = socket.id;
+      const myId = socket.id;
+      const myLang = getLang(myId);
 
-      const tgA = telegramUserOf.get(a)?.id ?? null;
-      const tgB = telegramUserOf.get(b)?.id ?? null;
-
-      if (await isBlockedBetween(tgA, tgB)) {
-        console.log("[match] пропускаем пару", a, "<->", b, "— в блок-листе");
-        waiting = a;
-        socket.emit("waiting");
-        return;
+      // 1) Ищем собеседника того же языка
+      if (myLang && waitingByLang.has(myLang)) {
+        const candidate = waitingByLang.get(myLang);
+        if (candidate !== myId && io.sockets.sockets.has(candidate)) {
+          waitingByLang.delete(myLang);
+          removeFromQueues(candidate);
+          const matched = await doMatch(candidate, myId);
+          if (matched) return;
+        } else {
+          waitingByLang.delete(myLang);
+        }
       }
 
-      const room = `${a}#${b}`;
-      const socketA = io.sockets.sockets.get(a);
-      if (!socketA) {
-        waiting = socket.id;
-        console.log("[waiting] socketA пропал, переставляем", socket.id);
-        return;
+      // 2) Ищем в общей очереди (любой язык)
+      if (waitingAny && waitingAny !== myId && io.sockets.sockets.has(waitingAny)) {
+        const candidate = waitingAny;
+        waitingAny = null;
+        removeFromQueues(candidate);
+        const matched = await doMatch(candidate, myId);
+        if (matched) return;
       }
 
-      socketA.join(room);
-      socket.join(room);
+      // 3) Никого не нашли — встаём в очередь своего языка
+      if (myLang) {
+        waitingByLang.set(myLang, myId);
+        console.log("[waiting]", myId, "| lang:", myLang);
 
-      partners.set(a, b);
-      partners.set(b, a);
-      roomOf.set(a, room);
-      roomOf.set(b, room);
-      waiting = null;
-
-      console.log("[match]", a, "<->", b);
-      io.to(a).emit("matched", { room, initiator: true });
-      io.to(b).emit("matched", { room, initiator: false });
+        // Через LANG_TIMEOUT переходим в общую очередь (fallback)
+        const t = setTimeout(() => {
+          if (waitingByLang.get(myLang) === myId) {
+            waitingByLang.delete(myLang);
+            if (!waitingAny) {
+              waitingAny = myId;
+              console.log("[waiting→any]", myId, "| lang timeout, переходим в общую очередь");
+            }
+          }
+          langFallbackTimers.delete(myId);
+        }, LANG_TIMEOUT);
+        langFallbackTimers.set(myId, t);
+      } else {
+        // Язык неизвестен — сразу в общую очередь
+        waitingAny = myId;
+        console.log("[waiting]", myId, "| lang: unknown → общая очередь");
+      }
     } finally {
       matchLock = false;
     }
@@ -308,7 +364,7 @@ io.on("connection", (socket) => {
   socket.on("skip", async () => {
     console.log("[skip]", socket.id);
     clearMatch(socket.id, "skip");
-    if (waiting === socket.id) waiting = null;
+    removeFromQueues(socket.id);
     await tryMatch();
   });
 
@@ -326,7 +382,7 @@ io.on("connection", (socket) => {
 
     // После блокировки — уходим от этого собеседника и ищем нового
     clearMatch(socket.id, "skip");
-    if (waiting === socket.id) waiting = null;
+    removeFromQueues(socket.id);
     await tryMatch();
   });
 
@@ -397,7 +453,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", (reason) => {
     console.log("[disconnect]", socket.id, reason);
-    if (waiting === socket.id) waiting = null;
+    removeFromQueues(socket.id);
     telegramUserOf.delete(socket.id);
     clearMatch(socket.id, "disconnect:" + reason);
   });
