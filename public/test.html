@@ -392,9 +392,9 @@ html, body {
         <span class="emoji" id="genderEmoji">🙂</span>
         <span id="genderLabel">Ваш пол</span>
       </button>
-      <button class="btn-filter" id="btnCountry">
-        <span class="emoji">🌍</span>
-        <span>Страна</span>
+      <button class="btn-filter" id="btnCountry" onclick="openCountryModal()">
+        <span class="emoji" id="countryEmoji">🌍</span>
+        <span id="countryLabel">Страна</span>
       </button>
     </div>
 
@@ -403,7 +403,7 @@ html, body {
     </button>
 
     <p class="disclaimer">
-      Используя видеочат, вы соглашаетесь с правилами.<br>
+      Используя видеочат, вы соглашаетесь с <span id="rulesLink" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span>.<br>
       Нарушители будут заблокированы.
     </p>
 
@@ -468,7 +468,60 @@ html, body {
   </div>
 </div>
 
+<!-- Попап правил -->
+<div class="modal-backdrop" id="rulesModal" hidden onclick="closeRulesModal(event)">
+  <div class="modal-sheet" style="max-height:80vh;overflow-y:auto;">
+    <div class="modal-title">Правила Spinny</div>
+    <div style="font-size:14px;line-height:1.7;color:#cbd5e1;">
+      <p style="margin-bottom:10px;">Добро пожаловать в Spinny — случайный видеочат для общения с людьми со всего мира. Пожалуйста, соблюдайте правила сообщества:</p>
+      <p style="margin-bottom:8px;">🚫 <b style="color:#fff;">Запрещено:</b></p>
+      <ul style="padding-left:18px;margin-bottom:12px;">
+        <li>Обнажение и сексуальный контент</li>
+        <li>Оскорбления, угрозы, язык ненависти</li>
+        <li>Контент с участием несовершеннолетних — <b style="color:#FF3B30;">немедленный бан</b></li>
+        <li>Спам, реклама, попрошайничество</li>
+        <li>Запись собеседника без его согласия</li>
+        <li>Публикация личных данных других пользователей</li>
+      </ul>
+      <p style="margin-bottom:8px;">✅ <b style="color:#fff;">Уважайте других:</b></p>
+      <ul style="padding-left:18px;margin-bottom:12px;">
+        <li>Общайтесь вежливо и доброжелательно</li>
+        <li>Нажмите "Дальше" если собеседник вам не подходит</li>
+        <li>Используйте кнопку жалобы 🚩 если кто-то нарушает правила</li>
+      </ul>
+      <p style="color:#9AB2CC;font-size:12px;">Нарушение правил приводит к блокировке аккаунта. Мы оставляем за собой право блокировать пользователей без предупреждения за серьёзные нарушения.</p>
+    </div>
+    <button class="btn-start" style="margin-top:16px;" onclick="document.getElementById('rulesModal').hidden=true;">Понятно</button>
+  </div>
+</div>
+
 <div class="error-toast" id="errorToast"></div>
+<div id="emojiLayer" style="position:fixed;inset:0;pointer-events:none;z-index:99;overflow:hidden;"></div>
+
+<!-- Попап выбора страны -->
+<div class="modal-backdrop" id="countryModal" hidden onclick="closeCountryModal(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">Страна / Язык</div>
+    <button class="modal-option" id="cOpt0" onclick="selectCountry(null)">
+      <span class="emoji">🌍</span> Весь мир
+    </button>
+    <button class="modal-option" id="cOpt1" onclick="selectCountry('ru')">
+      <span class="emoji">🇷🇺</span> Россия
+    </button>
+    <button class="modal-option" id="cOpt2" onclick="selectCountry('en')">
+      <span class="emoji">🇺🇸</span> English
+    </button>
+    <button class="modal-option" id="cOpt3" onclick="selectCountry('de')">
+      <span class="emoji">🇩🇪</span> Deutschland
+    </button>
+    <button class="modal-option" id="cOpt4" onclick="selectCountry('tr')">
+      <span class="emoji">🇹🇷</span> Türkiye
+    </button>
+    <button class="modal-option" id="cOpt5" onclick="selectCountry('es')">
+      <span class="emoji">🇪🇸</span> España
+    </button>
+  </div>
+</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="/socket.io/socket.io.js"></script>
@@ -704,26 +757,86 @@ socket.on("signal", async data => {
   } catch(e) {}
 });
 
+// ─── Страна / язык ──────────────────────────────────────
+const COUNTRY_OPTIONS = {
+  null:  { emoji: "🌍", label: "Весь мир",    id: "cOpt0" },
+  ru:    { emoji: "🇷🇺", label: "Россия",      id: "cOpt1" },
+  en:    { emoji: "🇺🇸", label: "English",     id: "cOpt2" },
+  de:    { emoji: "🇩🇪", label: "Deutschland", id: "cOpt3" },
+  tr:    { emoji: "🇹🇷", label: "Türkiye",     id: "cOpt4" },
+  es:    { emoji: "🇪🇸", label: "España",      id: "cOpt5" },
+};
+
+let myCountry = null;
+
+// Автоопределение языка — сначала из Telegram, потом из браузера
+function detectLanguage() {
+  const tgLang = tg?.initDataUnsafe?.user?.language_code;
+  const navLang = (navigator.language || "").slice(0, 2).toLowerCase();
+  const detected = tgLang || navLang || null;
+  // Берём только те что у нас есть в списке, иначе "Весь мир"
+  return COUNTRY_OPTIONS[detected] ? detected : null;
+}
+
+function applyCountry(code) {
+  myCountry = code;
+  const opt = COUNTRY_OPTIONS[code] || COUNTRY_OPTIONS[null];
+  document.getElementById("countryEmoji").textContent = opt.emoji;
+  document.getElementById("countryLabel").textContent = opt.label;
+  // Подсветка выбранного в модалке
+  Object.values(COUNTRY_OPTIONS).forEach(o => {
+    document.getElementById(o.id)?.classList.remove("selected");
+  });
+  document.getElementById(opt.id)?.classList.add("selected");
+}
+
+function openCountryModal() {
+  document.getElementById("countryModal").hidden = false;
+}
+function closeCountryModal(e) {
+  if (e.target === document.getElementById("countryModal"))
+    document.getElementById("countryModal").hidden = true;
+}
+function selectCountry(code) {
+  applyCountry(code);
+  document.getElementById("countryModal").hidden = true;
+}
+
+// Автоопределяем при загрузке
+applyCountry(detectLanguage());
+
+// ─── Правила ────────────────────────────────────────────
+function openRulesModal() {
+  document.getElementById("rulesModal").hidden = false;
+}
+function closeRulesModal(e) {
+  if (e.target === document.getElementById("rulesModal"))
+    document.getElementById("rulesModal").hidden = true;
+}
+
 // ─── Реакции ─────────────────────────────────────────────
 function sendReaction(emoji) {
-  // Летит у нас
   spawnEmoji(emoji, window.innerWidth / 2, window.innerHeight - 140);
-  // Отправляем партнёру
   if (room) socket.emit("reaction", { room, emoji });
 }
 
 socket.on("reaction", ({ emoji }) => {
-  // Летит у партнёра (с другой стороны экрана)
-  spawnEmoji(emoji, Math.random() * window.innerWidth * 0.6 + window.innerWidth * 0.2, window.innerHeight * 0.75);
+  spawnEmoji(emoji,
+    Math.random() * window.innerWidth * 0.6 + window.innerWidth * 0.2,
+    window.innerHeight * 0.75
+  );
 });
 
 function spawnEmoji(emoji, x, y) {
+  const layer = document.getElementById("emojiLayer");
   const el = document.createElement("div");
   el.className = "flying-emoji";
   el.textContent = emoji;
-  el.style.left = x - 14 + "px";
+  // Координаты относительно layer (fixed, inset:0 — совпадает с viewport)
+  el.style.left = (x - 14) + "px";
   el.style.top  = y + "px";
-  document.body.appendChild(el);
+  el.style.position = "absolute";
+  layer.appendChild(el);
   setTimeout(() => el.remove(), 1500);
 }
 </script>
