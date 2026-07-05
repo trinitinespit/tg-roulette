@@ -382,7 +382,8 @@ function adminAuth(req, res, next) {
 app.get("/admin", adminAuth, async (req, res) => {
   if (!db) return res.status(503).send("БД недоступна");
 
-  const [bans, reports, users, unban] = await Promise.all([
+  try {
+    const [bans, reports, users, unban] = await Promise.all([
     db.query(`SELECT b.telegram_id, b.reason, b.banned_at,
               u.username, u.first_name
               FROM bans b LEFT JOIN users u ON u.telegram_id = b.telegram_id
@@ -580,6 +581,10 @@ async function manualUnban(id) {
 </script>
 </body>
 </html>`);
+  } catch (e) {
+    console.error("[admin] ошибка:", e.message, e.stack);
+    res.status(500).send("Ошибка: " + e.message);
+  }
 });
 
 // Ручной бан через админку
