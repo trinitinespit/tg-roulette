@@ -214,19 +214,6 @@ html, body {
   background: #111;
 }
 
-/* Шестерня настроек */
-.btn-settings {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 12px);
-  left: 14px;
-  width: 38px; height: 38px;
-  background: rgba(0,0,0,0.45);
-  border: none; border-radius: 50%;
-  color: #fff; font-size: 18px;
-  cursor: pointer; z-index: 10;
-  display: flex; align-items: center; justify-content: center;
-}
-
 /* Статус поиска поверх чёрного */
 .search-overlay {
   position: absolute; inset: 0;
@@ -320,6 +307,7 @@ html, body {
   display: flex; align-items: center; justify-content: center;
 }
 .btn-icon:active { opacity: 0.7; }
+.btn-icon-stop { background: rgba(255,59,48,0.85); }
 
 /* Плавающая реакция текущего пользователя над кнопками */
 
@@ -441,8 +429,7 @@ html, body {
   <video id="remoteVideo" autoplay playsinline></video>
   <video id="localVideo" autoplay muted playsinline></video>
 
-  <button class="btn-settings" title="Настройки">⚙️</button>
-
+  
   <!-- Поверх видео во время поиска -->
   <div class="search-overlay" id="searchOverlay">
     <div class="search-spinner"></div>
@@ -465,9 +452,11 @@ html, body {
     <div class="controls-row">
       <!-- Жалоба -->
       <button class="btn-icon" id="btnReport" title="Пожаловаться" onclick="doReport()">🚩</button>
+      <!-- Стоп: полностью выйти из звонка -->
+      <button class="btn-icon btn-icon-stop" id="btnStop" title="Завершить" onclick="doStop()">⏹</button>
       <!-- Next -->
       <button class="btn-next" id="btnNext" onclick="doNext()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4 13 12 5 20"/><polyline points="11 4 19 12 11 20"/></svg>
         Дальше
       </button>
       <!-- Блок -->
@@ -752,6 +741,21 @@ function doBlock() {
   room = null;
   socket.emit("block");
   doFind();
+}
+
+// Полностью завершить звонок — в отличие от "Дальше" НЕ ищет нового собеседника
+function doStop() {
+  cleanupPeer();
+  room = null;
+  socket.emit("leave");
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  appState = "idle";
+  searchOverlay.hidden = true;
+  tg?.disableClosingConfirmation();
+  showScreen("screenHome");
+  const btn = document.getElementById("btnStart");
+  btn.disabled = false;
+  btn.textContent = "Начать общение";
 }
 
 function doReport() {

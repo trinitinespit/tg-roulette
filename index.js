@@ -629,7 +629,7 @@ app.post("/admin/ban", adminAuth, async (req, res) => {
   for (const [sockId, user] of telegramUserOf.entries()) {
     if (user.id === telegramId) {
       io.to(sockId).emit("banned", { reason: "Ваш аккаунт заблокирован администратором." });
-      io.sockets.sockets.get(sockId)?.disconnect(true);
+      setTimeout(() => io.sockets.sockets.get(sockId)?.disconnect(true), 500);
       break;
     }
   }
@@ -730,7 +730,7 @@ io.on("connection", (socket) => {
       if (await isBanned(user.id)) {
         console.log("[auth] ЗАБАНЕН:", user.id);
         socket.emit("banned", { reason: "Вы заблокированы за нарушение правил." });
-        socket.disconnect(true);
+        setTimeout(() => socket.disconnect(true), 500);
         return;
       }
 
@@ -939,6 +939,13 @@ io.on("connection", (socket) => {
     await tryMatch();
   });
 
+  // Пользователь нажал "Стоп" — завершает звонок насовсем, БЕЗ повторной постановки в очередь
+  socket.on("leave", () => {
+    console.log("[leave]", socket.id);
+    clearMatch(socket.id, "leave");
+    removeFromQueues(socket.id);
+  });
+
   // Пользователь блокирует текущего собеседника — они больше не будут мэтчиться
   socket.on("block", async () => {
     const partnerId = partners.get(socket.id);
@@ -1032,7 +1039,7 @@ io.on("connection", (socket) => {
 
         await banUser(offenderTgId, banReason);
         io.to(partnerId).emit("banned", { reason: banMsg });
-        io.sockets.sockets.get(partnerId)?.disconnect(true);
+        setTimeout(() => io.sockets.sockets.get(partnerId)?.disconnect(true), 500);
         clearMatch(socket.id, "report");
       }
     } catch (e) {
