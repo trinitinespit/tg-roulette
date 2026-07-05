@@ -34,6 +34,7 @@ async function initDb() {
       first_name    TEXT,
       language_code TEXT,
       is_premium    BOOLEAN NOT NULL DEFAULT FALSE,
+      premium_until TIMESTAMPTZ,
       gender        TEXT,           -- 'male' | 'female' | null (заполнится позже)
       created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -112,6 +113,45 @@ async function upsertUser(user) {
   `, [user.id, user.username || null, user.first_name || null, user.language_code || null]);
 }
 
+async function isPremium(telegramId) {
+  if (!db || !telegramId) return false;
+  const r = await db.query(
+    "SELECT is_premium, premium_until FROM users WHERE telegram_id = $1 LIMIT 1",
+    [telegramId]
+  );
+  if (!r.rowCount) return false;
+  const { is_premium, premium_until } = r.rows[0];
+  // Если есть дата истечения — проверяем актуальность
+  if (premium_until && new Date(premium_until) < new Date()) {
+    await db.query("UPDATE users SET is_premium = FALSE WHERE telegram_id = $1", [telegramId]);
+    return false;
+  }
+  return is_premium;
+}
+
+async function grantPremium(telegramId, days = 30) {
+  if (!db || !telegramId) return;
+  await db.query(`
+    INSERT INTO users (telegram_id, is_premium, premium_until)
+    VALUES ($1, TRUE, NOW() + INTERVAL '${days} days')
+    ON CONFLICT (telegram_id) DO UPDATE SET
+      is_premium    = TRUE,
+      premium_until = NOW() + INTERVAL '${days} days'
+  `, [telegramId]);
+  console.log("[premium] выдан на", days, "дней пользователю", telegramId);
+}
+
+async function setGender(telegramId, gender) {
+  if (!db || !telegramId) return;
+  await db.query("UPDATE users SET gender = $1 WHERE telegram_id = $2", [gender, telegramId]);
+}
+
+async function getGender(telegramId) {
+  if (!db || !telegramId) return null;
+  const r = await db.query("SELECT gender FROM users WHERE telegram_id = $1 LIMIT 1", [telegramId]);
+  return r.rows[0]?.gender ?? null;
+}
+
 async function saveReport({ reporterTgId, offenderTgId, verdict, nudityScore }) {
   if (!db) return;
   await db.query(
@@ -172,9 +212,120 @@ function verifyTelegramInitData(initData, botToken) {
 
 // ---------- HTTP роуты ----------
 app.use(express.static(path.join(__dirname, "public")));
+app.use(express.json());
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "test.html"));
+});
+
+// ---------- Stars: создать инвойс ----------
+// Клиент вызывает этот эндпоинт, сервер шлёт инвойс боту в личку пользователю,
+// Telegram открывает нативный экран оплаты.
+app.post("/create-invoice", async (req, res) => {
+  const { telegramId, product } = req.body;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!botToken) return res.status(500).json({ error: "BOT_TOKEN не задан" });
+  if (!telegramId) return res.status(400).json({ error: "telegramId обязателен" });
+
+  const PRODUCTS = {
+    premium_30: {
+      title: "Spinny Premium — 30 дней",
+      description: "Фильтр по полу, приоритетный матчинг и значок премиума на 30 дней",
+      payload: `premium_30:${telegramId}`,
+      amount: 75,  // 75 Stars ≈ ~$1
+      days: 30,
+    },
+    premium_90: {
+      title: "Spinny Premium — 3 месяца",
+      description: "Фильтр по полу, приоритетный матчинг и значок премиума на 3 месяца",
+      payload: `premium_90:${telegramId}`,
+      amount: 200, // 200 Stars ≈ ~$2.6
+      days: 90,
+    },
+  };
+
+  const p = PRODUCTS[product] || PRODUCTS.premium_30;
+
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${botToken}/sendInvoice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: telegramId,
+        title: p.title,
+        description: p.description,
+        payload: p.payload,
+        provider_token: "",  // пусто для Stars (XTR)
+        currency: "XTR",
+        prices: [{ label: p.title, amount: p.amount }],
+      }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.description);
+    console.log("[invoice] отправлен пользователю", telegramId, "| продукт:", product);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[invoice] ошибка:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- Telegram Webhook ----------
+// Telegram шлёт сюда все апдейты бота (successful_payment, pre_checkout_query и т.д.)
+// Нужно указать этот URL в настройках бота: POST /tg-webhook
+app.post("/tg-webhook", async (req, res) => {
+  res.sendStatus(200); // Отвечаем Telegram сразу, чтобы не таймаутить
+
+  const update = req.body;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return;
+
+  // Подтверждаем pre_checkout_query (обязательно в течение 10 сек)
+  if (update.pre_checkout_query) {
+    const pcq = update.pre_checkout_query;
+    await fetch(`https://api.telegram.org/bot${botToken}/answerPreCheckoutQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pre_checkout_query_id: pcq.id, ok: true }),
+    });
+    console.log("[pre_checkout] подтверждён для", pcq.from.id);
+    return;
+  }
+
+  // Успешная оплата
+  const payment = update.message?.successful_payment;
+  if (payment && payment.currency === "XTR") {
+    const telegramId = update.message.from.id;
+    const payload = payment.invoice_payload;
+    const chargeId = payment.telegram_payment_charge_id;
+
+    console.log("[payment] Stars от", telegramId, "| payload:", payload, "| charge:", chargeId);
+
+    // Парсим payload: "premium_30:123456" или "premium_90:123456"
+    const [product] = payload.split(":");
+    const days = product === "premium_90" ? 90 : 30;
+
+    await grantPremium(telegramId, days);
+
+    // Уведомляем клиента если он сейчас онлайн
+    for (const [sockId, user] of telegramUserOf.entries()) {
+      if (user.id === telegramId) {
+        io.to(sockId).emit("premium-granted", { days });
+        break;
+      }
+    }
+
+    // Благодарственное сообщение в бот
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: telegramId,
+        text: `⭐ Спасибо! Премиум активирован на ${days} дней. Открой Spinny и наслаждайся!`,
+      }),
+    });
+  }
 });
 
 app.get("/ice-servers", async (req, res) => {
@@ -211,6 +362,10 @@ const waitingByLang = new Map(); // language_code -> socketId
 let waitingAny = null;           // fallback-очередь (любой язык)
 const LANG_TIMEOUT = 10000;      // 10 сек ждём своего языка, потом расширяем
 const langFallbackTimers = new Map(); // socketId -> timer
+
+// Фильтры и статусы пользователей на время сессии
+// { gender, wantGender, premium }
+const userFilters = new Map();
 
 function getLang(socketId) {
   return telegramUserOf.get(socketId)?.language_code ?? null;
@@ -253,27 +408,43 @@ io.on("connection", (socket) => {
     console.log("[auth] верифицирован Telegram user", user.id, "для сокета", socket.id);
 
     try {
-      // Сохраняем/обновляем профиль в БД
       await upsertUser(user);
 
-      // Проверяем бан-лист (теперь из БД, переживает рестарты)
       if (await isBanned(user.id)) {
         console.log("[auth] ЗАБАНЕН:", user.id);
         socket.emit("banned", { reason: "Вы заблокированы за нарушение правил." });
         socket.disconnect(true);
+        return;
       }
+
+      // Отправляем клиенту его статус (премиум, пол) чтобы показать правильный UI
+      const userPremium = await isPremium(user.id);
+      const userGender = await getGender(user.id);
+      socket.emit("user-status", { premium: userPremium, gender: userGender });
     } catch (e) {
       console.error("[auth] ошибка БД:", e.message);
     }
   });
 
   async function doMatch(a, b) {
-    // Общая логика создания матча между двумя сокетами
     const tgA = telegramUserOf.get(a)?.id ?? null;
     const tgB = telegramUserOf.get(b)?.id ?? null;
 
     if (await isBlockedBetween(tgA, tgB)) {
       console.log("[match] пропускаем пару", a, "<->", b, "— в блок-листе");
+      return false;
+    }
+
+    // Проверяем гендерный фильтр (только у премиум-пользователей)
+    const fA = userFilters.get(a) || {};
+    const fB = userFilters.get(b) || {};
+
+    if (fA.premium && fA.wantGender && fB.gender && fA.wantGender !== fB.gender) {
+      console.log("[match] пропускаем пару", a, "<->", b, "— гендерный фильтр A");
+      return false;
+    }
+    if (fB.premium && fB.wantGender && fA.gender && fB.wantGender !== fA.gender) {
+      console.log("[match] пропускаем пару", a, "<->", b, "— гендерный фильтр B");
       return false;
     }
 
@@ -356,8 +527,58 @@ io.on("connection", (socket) => {
     }
   }
 
-  socket.on("find", async () => {
-    console.log("[find]", socket.id);
+  // Пол и фильтр по полу (только премиум)
+  socket.on("set-gender", async ({ gender, wantGender }) => {
+    const tgId = telegramUserOf.get(socket.id)?.id;
+    const premium = tgId ? await isPremium(tgId) : false;
+
+    const filters = { gender: gender || null, wantGender: premium ? (wantGender || null) : null, premium };
+    userFilters.set(socket.id, filters);
+
+    if (tgId && gender) await setGender(tgId, gender);
+    console.log("[set-gender]", socket.id, "| gender:", gender, "| wantGender:", filters.wantGender, "| premium:", premium);
+  });
+
+  // Покупка премиума — сервер шлёт инвойс в личку через Telegram Bot API
+  socket.on("buy-premium", async ({ product }) => {
+    const tgId = telegramUserOf.get(socket.id)?.id;
+    if (!tgId) {
+      socket.emit("error-msg", "Откройте приложение через Telegram для покупки премиума");
+      return;
+    }
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const PRODUCTS = {
+      premium_30: { title: "Spinny Premium — 30 дней", amount: 75, days: 30 },
+      premium_90: { title: "Spinny Premium — 3 месяца", amount: 200, days: 90 },
+    };
+    const p = PRODUCTS[product] || PRODUCTS.premium_30;
+
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${botToken}/sendInvoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: tgId,
+          title: p.title,
+          description: "Фильтр по полу и приоритетный матчинг в Spinny",
+          payload: `${product}:${tgId}`,
+          provider_token: "",
+          currency: "XTR",
+          prices: [{ label: p.title, amount: p.amount }],
+        }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.description);
+      console.log("[buy-premium] инвойс отправлен пользователю", tgId, "| продукт:", product);
+      socket.emit("invoice-sent", { message: "Инвойс отправлен в чат с ботом" });
+    } catch (e) {
+      console.error("[buy-premium] ошибка:", e.message);
+      socket.emit("error-msg", "Ошибка создания инвойса: " + e.message);
+    }
+  });
+
+  socket.on("find", async () => {    console.log("[find]", socket.id);
     await tryMatch();
   });
 
@@ -455,6 +676,7 @@ io.on("connection", (socket) => {
     console.log("[disconnect]", socket.id, reason);
     removeFromQueues(socket.id);
     telegramUserOf.delete(socket.id);
+    userFilters.delete(socket.id);
     clearMatch(socket.id, "disconnect:" + reason);
   });
 });
