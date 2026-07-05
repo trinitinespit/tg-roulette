@@ -317,6 +317,33 @@ app.post("/tg-webhook", async (req, res) => {
     return;
   }
 
+  // Команда /start — приветственное сообщение с кнопкой открытия Mini App
+  const message = update.message;
+  if (message?.text === "/start" || message?.text?.startsWith("/start ")) {
+    const userId = message.from.id;
+    const firstName = message.from.first_name || "друг";
+
+    await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: userId,
+        photo: "https://tg-roulette-33xs.onrender.com/spinny_logo.png",
+        caption: `👋 Привет, ${firstName}!\n\n🎲 *Spinny* — случайный видеочат прямо в Telegram.\n\nНажми кнопку ниже, разреши доступ к камере — и через секунды окажешься на связи с новым собеседником из любой точки мира.\n\n• 🌍 Мэтчинг по языку\n• ❤️ Реакции во время звонка\n• ⭐ Premium с фильтром по полу\n• 🚩 Система модерации`,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [[
+            {
+              text: "🎲 Открыть Spinny",
+              web_app: { url: "https://tg-roulette-33xs.onrender.com" }
+            }
+          ]]
+        }
+      }),
+    });
+    return;
+  }
+
   // Успешная оплата
   const payment = update.message?.successful_payment;
   if (payment && payment.currency === "XTR") {
