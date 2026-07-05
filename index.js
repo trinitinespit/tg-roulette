@@ -267,6 +267,13 @@ app.post("/create-invoice", async (req, res) => {
       amount: 200, // 200 Stars ≈ ~$2.6
       days: 90,
     },
+    unban: {
+      title: "Разблокировка аккаунта Spinny",
+      description: "Однократная разблокировка. Пожалуйста, соблюдайте правила после разблокировки.",
+      payload: `unban:${telegramId}`,
+      amount: 100,
+      days: 0,
+    },
   };
 
   const p = PRODUCTS[product] || PRODUCTS.premium_30;

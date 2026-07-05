@@ -578,6 +578,7 @@ html, body {
 <script>
 // ─── Telegram ───────────────────────────────────────────
 const tg = window.Telegram?.WebApp;
+const myTelegramId = tg?.initDataUnsafe?.user?.id || null;
 if (tg) {
   tg.ready();
   tg.expand();
@@ -794,10 +795,24 @@ socket.on("banned", data => {
   unbanBtn.className = "btn-premium";
   unbanBtn.style.marginTop = "8px";
   unbanBtn.textContent = "🔓 Разблокировать за 100 ⭐ Stars";
-  unbanBtn.onclick = () => {
-    socket.emit("buy-unban");
+  unbanBtn.onclick = async () => {
     unbanBtn.disabled = true;
-    unbanBtn.textContent = "📨 Инвойс отправлен в чат с ботом...";
+    unbanBtn.textContent = "📨 Отправляем инвойс...";
+    try {
+      const r = await fetch("/create-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegramId: myTelegramId, product: "unban" }),
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) throw new Error(data.error || "Неизвестная ошибка");
+      showError("📨 Инвойс на разблокировку отправлен в чат с ботом");
+      unbanBtn.textContent = "📨 Инвойс отправлен в чат с ботом...";
+    } catch (e) {
+      unbanBtn.disabled = false;
+      unbanBtn.textContent = "🔓 Разблокировать за 100 ⭐ Stars";
+      showError("Ошибка отправки инвойса: " + e.message);
+    }
   };
   document.getElementById("btnStart").after(unbanBtn);
 });
