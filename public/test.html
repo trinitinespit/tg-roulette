@@ -787,8 +787,38 @@ socket.on("partner-left", () => {
 socket.on("banned", data => {
   cleanupPeer();
   showScreen("screenHome");
-  showError(data?.reason || "Вы заблокированы.");
   tg?.disableClosingConfirmation();
+
+  const reason = data?.reason || "Ваш аккаунт заблокирован за нарушение правил.";
+  showError(reason);
+
+  // Блокируем кнопку старта
+  document.getElementById("btnStart").disabled = true;
+  document.getElementById("btnStart").textContent = "Аккаунт заблокирован";
+
+  // Показываем кнопку разблокировки
+  const existing = document.getElementById("unbanBtn");
+  if (existing) existing.remove();
+
+  const unbanBtn = document.createElement("button");
+  unbanBtn.id = "unbanBtn";
+  unbanBtn.className = "btn-premium";
+  unbanBtn.style.marginTop = "8px";
+  unbanBtn.textContent = "🔓 Разблокировать за 100 ⭐ Stars";
+  unbanBtn.onclick = () => {
+    socket.emit("buy-unban");
+    unbanBtn.disabled = true;
+    unbanBtn.textContent = "📨 Инвойс отправлен в чат с ботом...";
+  };
+  document.getElementById("btnStart").after(unbanBtn);
+});
+
+socket.on("unbanned", () => {
+  const btn = document.getElementById("btnStart");
+  btn.disabled = false;
+  btn.textContent = "Начать общение";
+  document.getElementById("unbanBtn")?.remove();
+  showError("✅ Аккаунт разблокирован! Можете продолжать.");
 });
 
 // ─── WebRTC ─────────────────────────────────────────────

@@ -62,6 +62,14 @@ async function initDb() {
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (blocker_tg_id, blocked_tg_id)
     );
+
+    CREATE TABLE IF NOT EXISTS unban_requests (
+      id              SERIAL PRIMARY KEY,
+      telegram_id     BIGINT NOT NULL,
+      charge_id       TEXT NOT NULL UNIQUE,
+      stars_paid      INTEGER NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 
   // Индекс ускоряет проверку бана при каждом подключении
@@ -158,6 +166,16 @@ async function saveReport({ reporterTgId, offenderTgId, verdict, nudityScore }) 
     "INSERT INTO reports (reporter_tg_id, offender_tg_id, verdict, nudity_score) VALUES ($1,$2,$3,$4)",
     [reporterTgId || null, offenderTgId || null, verdict, nudityScore ?? null]
   );
+}
+
+async function unbanUser(telegramId, chargeId, starsPaid) {
+  if (!db || !telegramId) return;
+  await db.query("DELETE FROM bans WHERE telegram_id = $1", [telegramId]);
+  await db.query(
+    "INSERT INTO unban_requests (telegram_id, charge_id, stars_paid) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+    [telegramId, chargeId, starsPaid]
+  );
+  console.log("[unban] разбанен:", telegramId, "| Stars:", starsPaid, "| charge:", chargeId);
 }
 
 async function blockUser(blockerTgId, blockedTgId) {
@@ -302,8 +320,31 @@ app.post("/tg-webhook", async (req, res) => {
 
     console.log("[payment] Stars от", telegramId, "| payload:", payload, "| charge:", chargeId);
 
-    // Парсим payload: "premium_30:123456" или "premium_90:123456"
+    // Парсим payload: "premium_30:123456", "premium_90:123456", "unban:123456"
     const [product] = payload.split(":");
+
+    if (product === "unban") {
+      await unbanUser(telegramId, chargeId, payment.total_amount);
+
+      // Уведомляем клиента если онлайн
+      for (const [sockId, user] of telegramUserOf.entries()) {
+        if (user.id === telegramId) {
+          io.to(sockId).emit("unbanned");
+          break;
+        }
+      }
+
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: telegramId,
+          text: "✅ Ваш аккаунт разблокирован! Открывайте Spinny и продолжайте общение.",
+        }),
+      });
+      return;
+    }
+
     const days = product === "premium_90" ? 90 : 30;
 
     await grantPremium(telegramId, days);
@@ -551,6 +592,7 @@ io.on("connection", (socket) => {
     const PRODUCTS = {
       premium_30: { title: "Spinny Premium — 30 дней", amount: 75, days: 30 },
       premium_90: { title: "Spinny Premium — 3 месяца", amount: 200, days: 90 },
+      unban:      { title: "Разблокировка аккаунта", amount: 100, days: 0 },
     };
     const p = PRODUCTS[product] || PRODUCTS.premium_30;
 
@@ -575,6 +617,38 @@ io.on("connection", (socket) => {
     } catch (e) {
       console.error("[buy-premium] ошибка:", e.message);
       socket.emit("error-msg", "Ошибка создания инвойса: " + e.message);
+    }
+  });
+
+  // Разблокировка за Stars
+  socket.on("buy-unban", async () => {
+    const tgId = telegramUserOf.get(socket.id)?.id;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+    if (!tgId || !botToken) {
+      socket.emit("error-msg", "Откройте приложение через Telegram");
+      return;
+    }
+
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${botToken}/sendInvoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: tgId,
+          title: "Разблокировка аккаунта Spinny",
+          description: "Однократная разблокировка. Пожалуйста, соблюдайте правила после разблокировки.",
+          payload: `unban:${tgId}`,
+          provider_token: "",
+          currency: "XTR",
+          prices: [{ label: "Разблокировка", amount: 100 }],
+        }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.description);
+      socket.emit("invoice-sent", { message: "Инвойс на разблокировку отправлен в чат с ботом" });
+    } catch (e) {
+      socket.emit("error-msg", "Ошибка: " + e.message);
     }
   });
 
@@ -630,27 +704,60 @@ io.on("connection", (socket) => {
 
       const formData = new FormData();
       formData.append("media", new Blob([buffer], { type: "image/jpeg" }), "report.jpg");
-      formData.append("models", "nudity-2.1");
+      // nudity-2.1 — обнаженка/сексуальный контент
+      // faces — определяет возраст лиц на кадре
+      // minors — специализированная модель защиты несовершеннолетних
+      formData.append("models", "nudity-2.1,faces,minors");
       formData.append("api_user", apiUser);
       formData.append("api_secret", apiSecret);
 
       const r = await fetch("https://api.sightengine.com/1.0/check.json", { method: "POST", body: formData });
       const result = await r.json();
-      console.log("[report] Sightengine:", JSON.stringify(result.nudity || result));
+      console.log("[report] Sightengine полный ответ:", JSON.stringify(result));
 
+      // --- Nudity check ---
       const raw = result?.nudity?.sexual_activity ?? result?.nudity?.raw ?? 0;
       const partial = result?.nudity?.suggestive ?? result?.nudity?.partial ?? 0;
-      const score = Math.max(raw, partial);
-      const isViolation = score > 0.6;
+      const nudityScore = Math.max(raw, partial);
+      const isNudity = nudityScore > 0.6;
 
-      const verdict = isViolation ? "violation" : "clean";
-      await saveReport({ reporterTgId, offenderTgId, verdict, nudityScore: score });
+      // --- Minors check ---
+      // Sightengine возвращает minor: { found: true/false, score: 0-1 }
+      const minorFound = result?.minor?.found === true || (result?.minor?.score ?? 0) > 0.5;
+
+      // --- Faces age check (дополнительная защита) ---
+      // Если среди определённых лиц есть кто-то моложе 18 — флаг
+      const faces = result?.faces ?? [];
+      const hasMinorFace = faces.some(f => f.age?.min < 18);
+
+      const isMinorViolation = minorFound || hasMinorFace;
+      const isViolation = isNudity || isMinorViolation;
+
+      // Определяем причину бана для логов
+      let banReason = null;
+      if (isMinorViolation) banReason = "CSAM/minors — auto ban after report";
+      else if (isNudity) banReason = `nudity (score: ${nudityScore.toFixed(2)}) — auto ban after report`;
+
+      const verdict = isViolation
+        ? (isMinorViolation ? "csam" : "violation")
+        : "clean";
+
+      console.log("[report] вердикт:", verdict,
+        "| nudity:", nudityScore.toFixed(2),
+        "| minor:", isMinorViolation,
+        "| ban:", banReason);
+
+      await saveReport({ reporterTgId, offenderTgId, verdict, nudityScore });
 
       if (isViolation) {
-        await banUser(offenderTgId, "nudity — auto ban after report");
-        io.to(partnerId).emit("banned", { reason: "Жалоба подтверждена: обнаружен недопустимый контент." });
+        const banMsg = isMinorViolation
+          ? "Обнаружен контент с участием несовершеннолетних. Аккаунт заблокирован."
+          : "Жалоба подтверждена: обнаружен недопустимый контент.";
+
+        await banUser(offenderTgId, banReason);
+        io.to(partnerId).emit("banned", { reason: banMsg });
         io.sockets.sockets.get(partnerId)?.disconnect(true);
-        clearMatch(socket.id, "skip");
+        clearMatch(socket.id, "report");
       }
     } catch (e) {
       console.error("[report] ошибка:", e.message);
