@@ -4,9 +4,6 @@ meta:
     name: npm
     version: "20"
 
-build:
-  dockerfile: false
-
 run:
   command: node index.js
   containerPort: "8080"
