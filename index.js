@@ -5,6 +5,10 @@ const crypto = require("crypto");
 const { Pool } = require("pg");
 const { Server } = require("socket.io");
 
+console.log("[env] BOT_TOKEN:", process.env.TELEGRAM_BOT_TOKEN ? "SET" : "NOT SET");
+console.log("[env] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
+console.log("[env] METERED_APP_NAME:", process.env.METERED_APP_NAME ? "SET" : "NOT SET");
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
