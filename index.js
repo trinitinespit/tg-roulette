@@ -239,12 +239,112 @@ function verifyTelegramInitData(initData, botToken) {
   }
 }
 
+// ---------- Сессия для прямых заходов на домен (не через Mini App) ----------
+// Используется когда человек открывает spinnyapp.ru напрямую в браузере —
+// там нет Telegram initData, поэтому просим войти через Telegram Login Widget
+// и держим личность в подписанной cookie.
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.TELEGRAM_BOT_TOKEN || "spinny-fallback-secret";
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 дней
+
+function signSession(payload) {
+  const json = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = crypto.createHmac("sha256", SESSION_SECRET).update(json).digest("hex");
+  return `${json}.${sig}`;
+}
+
+function verifySession(token) {
+  if (!token) return null;
+  const [json, sig] = token.split(".");
+  if (!json || !sig) return null;
+  const expected = crypto.createHmac("sha256", SESSION_SECRET).update(json).digest("hex");
+  if (sig !== expected) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(json, "base64url").toString());
+    if (!payload.exp || payload.exp < Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function parseCookies(header) {
+  const out = {};
+  (header || "").split(";").forEach(pair => {
+    const idx = pair.indexOf("=");
+    if (idx === -1) return;
+    const k = pair.slice(0, idx).trim();
+    const v = pair.slice(idx + 1).trim();
+    if (k) out[k] = decodeURIComponent(v);
+  });
+  return out;
+}
+
+// Проверка данных от Telegram Login Widget (используется на голом домене,
+// в отличие от verifyTelegramInitData который проверяет Mini App).
+// Алгоритм отличается от Mini App: secret = SHA256(bot_token), а не HMAC("WebAppData", ...).
+function verifyTelegramWidgetAuth(data, botToken) {
+  if (!data || !botToken) return null;
+  const { hash, ...rest } = data;
+  if (!hash) return null;
+
+  const checkString = Object.keys(rest)
+    .sort()
+    .map(k => `${k}=${rest[k]}`)
+    .join("\n");
+
+  const secretKey = crypto.createHash("sha256").update(botToken).digest();
+  const computedHash = crypto.createHmac("sha256", secretKey).update(checkString).digest("hex");
+  if (computedHash !== hash) return null;
+
+  // Защита от replay — данные виджета не должны быть старше суток
+  const authDate = parseInt(rest.auth_date, 10);
+  if (!authDate || (Date.now() / 1000 - authDate) > 86400) return null;
+
+  return rest; // { id, first_name, last_name, username, photo_url, auth_date }
+}
+
+// Имя бота нужно фронтенду для рендера Login Widget — получаем один раз при старте.
+let BOT_USERNAME = null;
+
 // ---------- HTTP роуты ----------
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "test.html"));
+});
+
+// Отдаём фронтенду username бота, чтобы отрендерить Telegram Login Widget
+app.get("/bot-info", (req, res) => {
+  res.json({ username: BOT_USERNAME });
+});
+
+// Приём результата Telegram Login Widget — проверяем подпись и выдаём сессию
+app.post("/auth/telegram-widget", (req, res) => {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const user = verifyTelegramWidgetAuth(req.body, botToken);
+  if (!user) return res.status(401).json({ ok: false, error: "Неверная подпись Telegram" });
+
+  const sessionPayload = {
+    id: Number(user.id),
+    first_name: user.first_name || null,
+    username: user.username || null,
+    exp: Date.now() + SESSION_MAX_AGE_MS,
+  };
+  const token = signSession(sessionPayload);
+  res.setHeader(
+    "Set-Cookie",
+    `spinny_session=${token}; Path=/; Max-Age=${Math.floor(SESSION_MAX_AGE_MS / 1000)}; HttpOnly; SameSite=Lax${req.secure ? "; Secure" : ""}`
+  );
+  res.json({ ok: true });
+});
+
+// Проверка текущей сессии (используется фронтендом при прямом заходе)
+app.get("/auth/me", (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const session = verifySession(cookies.spinny_session);
+  if (!session) return res.status(401).json({ ok: false });
+  res.json({ ok: true, user: session });
 });
 
 // ---------- Stars: создать инвойс ----------
@@ -846,14 +946,26 @@ io.on("connection", (socket) => {
   console.log("[connect]", socket.id);
 
   socket.on("auth", async (data) => {
-    const user = verifyTelegramInitData(data?.initData, process.env.TELEGRAM_BOT_TOKEN);
+    let user = verifyTelegramInitData(data?.initData, process.env.TELEGRAM_BOT_TOKEN);
+
+    // Нет Mini App initData — вероятно, зашли напрямую по ссылке на домен.
+    // Проверяем сессионную cookie, выданную после входа через Telegram Login Widget.
+    if (!user) {
+      const cookies = parseCookies(socket.handshake.headers.cookie);
+      const session = verifySession(cookies.spinny_session);
+      if (session) {
+        user = { id: session.id, first_name: session.first_name, username: session.username };
+      }
+    }
 
     if (!user) {
-      console.log("[auth] анонимный/тестовый режим для", socket.id);
+      console.log("[auth] не идентифицирован (нет initData и нет сессии):", socket.id);
+      socket.emit("auth-result", { authenticated: false });
       return;
     }
 
     telegramUserOf.set(socket.id, user);
+    socket.emit("auth-result", { authenticated: true });
     console.log("[auth] верифицирован Telegram user", user.id, "для сокета", socket.id);
 
     try {
@@ -1064,6 +1176,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("find", async () => {    console.log("[find]", socket.id);
+    if (!telegramUserOf.has(socket.id)) {
+      socket.emit("need-telegram-auth");
+      return;
+    }
     if (bannedSockets.has(socket.id)) {
       socket.emit("banned", { reason: "Вы заблокированы за нарушение правил." });
       return;
@@ -1230,6 +1346,17 @@ initDb().catch(e => {
 (async () => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) return;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+    const data = await r.json();
+    if (data.ok) {
+      BOT_USERNAME = data.result.username;
+      console.log("[bot] username:", BOT_USERNAME);
+    }
+  } catch (e) {
+    console.warn("[bot] не удалось получить username:", e.message);
+  }
+
   try {
     await fetch(`https://api.telegram.org/bot${botToken}/setChatMenuButton`, {
       method: "POST",

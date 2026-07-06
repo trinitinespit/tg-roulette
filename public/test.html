@@ -365,6 +365,17 @@ html, body {
 </head>
 <body>
 
+<!-- ЭКРАН ВХОДА ЧЕРЕЗ TELEGRAM (для прямого захода на домен, вне Mini App) -->
+<div class="screen" id="screenAuthGate" hidden>
+  <div class="home-content" style="justify-content:center;align-items:center;text-align:center;gap:20px;">
+    <div class="logo-text">Spin<span>ny</span></div>
+    <p style="color:var(--text-dim);max-width:280px;">
+      Чтобы пользоваться Spinny, войдите через Telegram
+    </p>
+    <div id="tgLoginWidget"></div>
+  </div>
+</div>
+
 <!-- СТАРТОВЫЙ ЭКРАН -->
 <div class="screen" id="screenHome">
   <canvas id="staticCanvas"></canvas>
@@ -739,6 +750,69 @@ socket.on("connect", () => {
   socket.emit("auth", { initData: tg?.initData || null });
 });
 socket.on("connect_error", e => showError("Ошибка соединения: " + e.message));
+
+// ─── Вход через Telegram (для прямого захода на домен) ──
+// Если мы НЕ внутри Mini App (нет initData) и сервер сказал, что мы не
+// идентифицированы — показываем Telegram Login Widget вместо приложения.
+let authGateShown = false;
+
+socket.on("auth-result", ({ authenticated }) => {
+  if (!authenticated && !tg?.initData) {
+    showTelegramLoginGate();
+  }
+});
+
+socket.on("need-telegram-auth", () => {
+  showError("Войдите через Telegram, чтобы продолжить", true);
+  showTelegramLoginGate();
+});
+
+async function showTelegramLoginGate() {
+  showScreen("screenAuthGate");
+  if (authGateShown) return;
+  authGateShown = true;
+  try {
+    const r = await fetch("/bot-info");
+    const { username } = await r.json();
+    if (!username) {
+      showError("Вход через Telegram временно недоступен");
+      return;
+    }
+    const container = document.getElementById("tgLoginWidget");
+    const script = document.createElement("script");
+    script.async = true;
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", username);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-radius", "12");
+    script.setAttribute("data-onauth", "onTelegramWidgetAuth(user)");
+    script.setAttribute("data-request-access", "write");
+    container.appendChild(script);
+  } catch (e) {
+    showError("Не удалось загрузить вход через Telegram");
+  }
+}
+
+// Колбэк виджета Telegram — вызывается после успешного входа пользователя
+async function onTelegramWidgetAuth(user) {
+  try {
+    const r = await fetch("/auth/telegram-widget", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(user),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      location.reload(); // перезагружаем — теперь сессия есть, auth пройдёт через cookie
+    } else {
+      showError(data.error || "Ошибка входа через Telegram");
+    }
+  } catch (e) {
+    showError("Ошибка сети при входе через Telegram");
+  }
+}
+window.onTelegramWidgetAuth = onTelegramWidgetAuth;
 
 // ─── Камера & старт ──────────────────────────────────────
 async function startCamera() {
