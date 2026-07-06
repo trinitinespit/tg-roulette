@@ -23,7 +23,8 @@ async function initDb() {
 
   db = new Pool({
     connectionString: url,
-    ssl: { rejectUnauthorized: false } // Render требует SSL для внешних подключений
+    ssl: { rejectUnauthorized: false }, // требуется для внешних подключений к managed Postgres
+    connectionTimeoutMillis: 5000 // не ждём вечно, если БД недоступна
   });
 
   // Создаём таблицы если их нет — idempotent, безопасно запускать при каждом старте
@@ -335,14 +336,14 @@ app.post("/tg-webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: userId,
-        photo: "https://spinny-bot-trinitinespit.amvera.io/spinny_logo.png",
+        photo: "https://spinnyapp.ru/spinny_logo.png",
         caption: `👋 Привет, ${firstName}!\n\n🎲 *Spinny* — случайный видеочат прямо в Telegram.\n\nНажми кнопку ниже, разреши доступ к камере — и через секунды окажешься на связи с новым собеседником из любой точки мира.\n\n• 🌍 Мэтчинг по языку\n• ❤️ Реакции во время звонка\n• ⭐ Premium с фильтром по полу\n• 🚩 Система модерации`,
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [[
             {
               text: "🎲 Открыть Spinny",
-              web_app: { url: "https://spinny-bot-trinitinespit.amvera.io" }
+              web_app: { url: "https://spinnyapp.ru" }
             }
           ]]
         }
@@ -1207,7 +1208,18 @@ io.on("connection", (socket) => {
 });
 
 // ---------- Старт ----------
-initDb()
+// Гонка initDb() с таймаутом: даже если БД зависла (не отвечает и не падает с ошибкой),
+// сервер всё равно поднимется и не будет вечно возвращать 503.
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`initDb timeout после ${ms}мс`)), ms)
+    ),
+  ]);
+}
+
+withTimeout(initDb(), 8000)
   .then(() => {
     server.listen(process.env.PORT || 3000, () => {
       console.log("SERVER RUNNING");
@@ -1220,3 +1232,26 @@ initDb()
       console.log("SERVER RUNNING (без БД)");
     });
   });
+
+// Держим кнопку меню бота актуальной автоматически при каждом старте —
+// чтобы при смене домена не приходилось руками лезть в BotFather.
+(async () => {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/setChatMenuButton`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        menu_button: {
+          type: "web_app",
+          text: "Открыть Spinny",
+          web_app: { url: "https://spinnyapp.ru" }
+        }
+      })
+    });
+    console.log("[menu_button] обновлена: https://spinnyapp.ru");
+  } catch (e) {
+    console.warn("[menu_button] не удалось обновить:", e.message);
+  }
+})();
