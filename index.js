@@ -335,14 +335,14 @@ app.post("/tg-webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: userId,
-        photo: "https://tg-roulette-33xs.onrender.com/spinny_logo.png",
+        photo: "https://spinny-bot-trinitinespit.amvera.io/spinny_logo.png",
         caption: `👋 Привет, ${firstName}!\n\n🎲 *Spinny* — случайный видеочат прямо в Telegram.\n\nНажми кнопку ниже, разреши доступ к камере — и через секунды окажешься на связи с новым собеседником из любой точки мира.\n\n• 🌍 Мэтчинг по языку\n• ❤️ Реакции во время звонка\n• ⭐ Premium с фильтром по полу\n• 🚩 Система модерации`,
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [[
             {
               text: "🎲 Открыть Spinny",
-              web_app: { url: "https://tg-roulette-33xs.onrender.com" }
+              web_app: { url: "https://spinny-bot-trinitinespit.amvera.io" }
             }
           ]]
         }
