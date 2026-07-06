@@ -741,26 +741,56 @@ app.post("/admin/unblock", adminAuth, async (req, res) => {
   }
 });
 
+// Генерация временных TURN-кредов по стандарту TURN REST API (RFC-подобный,
+// тот же механизм, что use-auth-secret в coturn). Секрет общий с turnserver.conf
+// (static-auth-secret), поэтому coturn проверяет creds без похода в БД.
+function getTurnCredentials(ttlSeconds = 86400) {
+  const secret = process.env.TURN_SECRET;
+  const username = String(Math.floor(Date.now() / 1000) + ttlSeconds);
+  const credential = crypto.createHmac("sha1", secret).update(username).digest("base64");
+  return { username, credential };
+}
+
 app.get("/ice-servers", async (req, res) => {
-  const appName = process.env.METERED_APP_NAME;
+  const host = process.env.TURN_HOST;     // свой coturn на Aeza (когда будет готов)
+  const secret = process.env.TURN_SECRET;
+  const appName = process.env.METERED_APP_NAME; // временный fallback, пока свой TURN не готов
   const apiKey = process.env.METERED_API_KEY;
   const fallback = [{ urls: "stun:stun.l.google.com:19302" }];
 
-  if (!appName || !apiKey) {
-    console.warn("[ice-servers] METERED_APP_NAME / METERED_API_KEY не заданы, отдаю только STUN");
-    return res.json(fallback);
+  // 1) Приоритет — свой TURN-сервер, если настроен
+  if (host && secret) {
+    try {
+      const { username, credential } = getTurnCredentials();
+      const iceServers = [
+        { urls: `stun:${host}:3478` },
+        { urls: `turn:${host}:3478?transport=udp`, username, credential },
+        { urls: `turn:${host}:3478?transport=tcp`, username, credential },
+      ];
+      console.log("[ice-servers] используем свой TURN:", host);
+      return res.json(iceServers);
+    } catch (e) {
+      console.error("[ice-servers] свой TURN не удалось сконфигурировать:", e.message);
+      // падаем ниже на Metered/STUN
+    }
   }
 
-  try {
-    const r = await fetch(`https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`);
-    if (!r.ok) throw new Error(`Metered ответил ${r.status}`);
-    const iceServers = await r.json();
-    console.log("[ice-servers] получены TURN-креды от Metered");
-    res.json(iceServers);
-  } catch (e) {
-    console.error("[ice-servers] не удалось получить TURN-креды:", e.message);
-    res.json(fallback);
+  // 2) Временный fallback — Metered (пока свой TURN не готов)
+  if (appName && apiKey) {
+    try {
+      const r = await fetch(`https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`);
+      if (!r.ok) throw new Error(`Metered ответил ${r.status}`);
+      const iceServers = await r.json();
+      console.log("[ice-servers] используем Metered (временно)");
+      return res.json(iceServers);
+    } catch (e) {
+      console.error("[ice-servers] Metered недоступен:", e.message);
+    }
   }
+
+  // 3) Совсем без TURN — только STUN (часть звонков за NAT не соединится)
+  console.warn("[ice-servers] ни свой TURN, ни Metered не настроены, отдаю только STUN");
+  res.json(fallback);
 });
 
 // ---------- Матчинг ----------
