@@ -40,20 +40,21 @@ html, body {
 }
 .screen[hidden] { display: none !important; }
 
-/* ===== СТАРТОВЫЙ ЭКРАН ===== */
-#screenHome {
-  background: #111;
+/* ===== СТАРТОВЫЙ ЭКРАН И ЭКРАН ВХОДА (общий TV-фон) ===== */
+.tv-screen {
+  background: transparent;
 }
 
-/* TV-статик — canvas на весь экран */
+/* TV-статик — общий canvas на весь экран, лежит позади всех .screen */
 #staticCanvas {
-  position: absolute; inset: 0;
+  position: fixed; inset: 0;
   width: 100%; height: 100%;
   opacity: 0.55;
+  z-index: 0;
 }
 
 /* Затемнение снизу, чтобы контент читался */
-#screenHome::after {
+.tv-screen::after {
   content: '';
   position: absolute; inset: 0;
   background: linear-gradient(to bottom, rgba(13,27,46,0.45) 0%, rgba(13,27,46,0.85) 55%, #0D1B2E 100%);
@@ -177,6 +178,30 @@ html, body {
   border-color: rgba(255,215,0,0.6);
   background: rgba(255,215,0,0.08);
   cursor: default;
+}
+
+/* Экран входа через Telegram */
+.gate-desc {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  max-width: 320px;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.gate-desc-sub {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+
+.tg-login-widget {
+  margin-top: 6px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Дисклеймер */
@@ -365,20 +390,55 @@ html, body {
 </head>
 <body>
 
+<!-- Общий TV-статик фон — виден сквозь screenHome и screenAuthGate -->
+<canvas id="staticCanvas"></canvas>
+
 <!-- ЭКРАН ВХОДА ЧЕРЕЗ TELEGRAM (для прямого захода на домен, вне Mini App) -->
-<div class="screen" id="screenAuthGate" hidden>
-  <div class="home-content" style="justify-content:center;align-items:center;text-align:center;gap:20px;">
-    <div class="logo-text">Spin<span>ny</span></div>
-    <p style="color:var(--text-dim);max-width:280px;">
-      Чтобы пользоваться Spinny, войдите через Telegram
+<div class="screen tv-screen" id="screenAuthGate" hidden>
+  <div class="home-content">
+
+    <div class="logo-wrap">
+      <svg class="logo-tv" viewBox="0 0 72 56" fill="none">
+        <rect x="4" y="14" width="64" height="38" rx="5" fill="#1A6FD4"/>
+        <rect x="8" y="18" width="56" height="30" rx="3" fill="#0D1B2E"/>
+        <line x1="24" y1="14" x2="14" y2="3" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="48" y1="14" x2="58" y2="3" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        <text x="36" y="38" text-anchor="middle" font-family="Nunito,sans-serif" font-weight="900" font-size="11" fill="white">SPIN</text>
+        <rect x="24" y="52" width="8" height="4" rx="2" fill="#1A6FD4"/>
+        <rect x="40" y="52" width="8" height="4" rx="2" fill="#1A6FD4"/>
+        <rect x="20" y="52" width="32" height="3" rx="1.5" fill="#1254A8"/>
+      </svg>
+      <div class="logo-text">Spin<span>ny</span></div>
+    </div>
+
+    <div class="online-badge">
+      <span class="online-dot"></span>
+      <span class="online-count" id="onlineCountGate">–</span>
+      <span>пользователей онлайн</span>
+    </div>
+
+    <p class="gate-desc">
+      🎲 Spinny — случайный видеочат в Telegram. Один тап — и вы уже общаетесь
+      по видео с новым человеком из любой точки мира: мэтчинг по языку,
+      реакции во время звонка и фильтр по полу с Premium.
     </p>
-    <div id="tgLoginWidget"></div>
+
+    <p class="gate-desc gate-desc-sub">
+      Чтобы отсечь ботов и нарушителей, вход возможен только через Telegram —
+      это займёт 5 секунд и не требует пароля.
+    </p>
+
+    <div id="tgLoginWidget" class="tg-login-widget"></div>
+
+    <p class="disclaimer">
+      Продолжая, вы соглашаетесь с <span id="rulesLinkGate" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span>.
+    </p>
+
   </div>
 </div>
 
 <!-- СТАРТОВЫЙ ЭКРАН -->
-<div class="screen" id="screenHome">
-  <canvas id="staticCanvas"></canvas>
+<div class="screen tv-screen" id="screenHome">
 
   <div class="home-content">
 
@@ -628,10 +688,16 @@ function stopStatic() { cancelAnimationFrame(staticRaf); }
 
 // ─── Счётчик онлайн (имитация, заменим реальным позже) ──
 let fakeOnline = 12000 + Math.floor(Math.random() * 8000);
-document.getElementById("onlineCount").textContent = fakeOnline.toLocaleString("ru");
+function renderOnlineCount() {
+  const text = Math.max(1000, fakeOnline).toLocaleString("ru");
+  document.getElementById("onlineCount").textContent = text;
+  const gateEl = document.getElementById("onlineCountGate");
+  if (gateEl) gateEl.textContent = text;
+}
+renderOnlineCount();
 setInterval(() => {
   fakeOnline += Math.floor(Math.random() * 40) - 20;
-  document.getElementById("onlineCount").textContent = Math.max(1000, fakeOnline).toLocaleString("ru");
+  renderOnlineCount();
 }, 3000);
 
 // ─── Пол ────────────────────────────────────────────────
