@@ -1208,30 +1208,18 @@ io.on("connection", (socket) => {
 });
 
 // ---------- Старт ----------
-// Гонка initDb() с таймаутом: даже если БД зависла (не отвечает и не падает с ошибкой),
-// сервер всё равно поднимется и не будет вечно возвращать 503.
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`initDb timeout после ${ms}мс`)), ms)
-    ),
-  ]);
-}
+// Сервер стартует НЕМЕДЛЕННО — Amvera/Render требуют чтобы порт слушался быстро.
+// БД инициализируется в фоне параллельно.
+const PORT = process.env.PORT || 8080;
 
-withTimeout(initDb(), 8000)
-  .then(() => {
-    server.listen(process.env.PORT || 3000, () => {
-      console.log("SERVER RUNNING");
-    });
-  })
-  .catch((e) => {
-    console.error("[db] критическая ошибка инициализации:", e.message);
-    // Запускаем сервер даже если БД не поднялась — работаем в in-memory режиме
-    server.listen(process.env.PORT || 3000, () => {
-      console.log("SERVER RUNNING (без БД)");
-    });
-  });
+server.listen(PORT, () => {
+  console.log("SERVER RUNNING on port", PORT);
+});
+
+// Инициализируем БД в фоне — не блокируем старт сервера
+initDb().catch(e => {
+  console.error("[db] ошибка инициализации:", e.message);
+});
 
 // Держим кнопку меню бота актуальной автоматически при каждом старте —
 // чтобы при смене домена не приходилось руками лезть в BotFather.
