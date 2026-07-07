@@ -11,6 +11,8 @@ console.log("[env] METERED_APP_NAME:", process.env.METERED_APP_NAME ? "SET" : "N
 console.log("[env] METERED_API_KEY:", process.env.METERED_API_KEY ? "SET" : "NOT SET");
 console.log("[env] TURN_HOST:", process.env.TURN_HOST ? `SET (${process.env.TURN_HOST})` : "NOT SET");
 console.log("[env] TURN_SECRET:", process.env.TURN_SECRET ? "SET" : "NOT SET");
+console.log("[env] SIGHTENGINE_API_USER:", process.env.SIGHTENGINE_API_USER ? "SET" : "NOT SET");
+console.log("[env] SIGHTENGINE_API_SECRET:", process.env.SIGHTENGINE_API_SECRET ? "SET" : "NOT SET");
 
 const app = express();
 const server = http.createServer(app);
@@ -354,7 +356,7 @@ app.get("/auth/me", (req, res) => {
 // Клиент вызывает этот эндпоинт, сервер шлёт инвойс боту в личку пользователю,
 // Telegram открывает нативный экран оплаты.
 app.post("/create-invoice", async (req, res) => {
-  const { telegramId, product } = req.body;
+  const { telegramId, product, amount: customAmount } = req.body;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
   if (!botToken) return res.status(500).json({ error: "BOT_TOKEN не задан" });
@@ -384,7 +386,23 @@ app.post("/create-invoice", async (req, res) => {
     },
   };
 
-  const p = PRODUCTS[product] || PRODUCTS.premium_30;
+  let p;
+
+  if (product === "donate") {
+    // Донат с произвольной суммой — задаётся пользователем на клиенте
+    const amt = Math.floor(Number(customAmount));
+    if (!Number.isFinite(amt) || amt < 1 || amt > 100000) {
+      return res.status(400).json({ error: "Некорректная сумма доната (1–100000 Stars)" });
+    }
+    p = {
+      title: "Поддержать Spinny",
+      description: `Донат на развитие проекта — ${amt} Stars. Спасибо за поддержку! ❤️`,
+      payload: `donate:${telegramId}:${amt}`,
+      amount: amt,
+    };
+  } else {
+    p = PRODUCTS[product] || PRODUCTS.premium_30;
+  }
 
   try {
     const r = await fetch(`https://api.telegram.org/bot${botToken}/sendInvoice`, {
@@ -437,6 +455,32 @@ app.post("/tg-webhook", async (req, res) => {
   if (message?.text === "/start" || message?.text?.startsWith("/start ")) {
     const userId = message.from.id;
     const firstName = message.from.first_name || "друг";
+    const langCode = (message.from.language_code || "ru").split("-")[0];
+
+    const GREETINGS = {
+      ru: {
+        text: (name) => `👋 Привет, ${name}!\n\n🎲 *Spinny* — случайный видеочат прямо в Telegram.\n\nНажми кнопку ниже, разреши доступ к камере — и через секунды окажешься на связи с новым собеседником из любой точки мира.\n\n• 🌍 Мэтчинг по языку\n• ❤️ Реакции во время звонка\n• ⭐ Premium с фильтром по полу\n• 🚩 Система модерации`,
+        button: "🎲 Открыть Spinny",
+      },
+      en: {
+        text: (name) => `👋 Hi, ${name}!\n\n🎲 *Spinny* is a random video chat right inside Telegram.\n\nTap the button below, allow camera access — and in seconds you'll be talking to someone new from anywhere in the world.\n\n• 🌍 Language-based matching\n• ❤️ Reactions during the call\n• ⭐ Premium with gender filter\n• 🚩 Moderation system`,
+        button: "🎲 Open Spinny",
+      },
+      de: {
+        text: (name) => `👋 Hallo, ${name}!\n\n🎲 *Spinny* ist ein zufälliger Videochat direkt in Telegram.\n\nTippe unten auf den Button, erlaube den Kamerazugriff — und in Sekunden bist du mit jemand Neuem aus der ganzen Welt verbunden.\n\n• 🌍 Sprachbasiertes Matching\n• ❤️ Reaktionen während des Anrufs\n• ⭐ Premium mit Geschlechterfilter\n• 🚩 Moderationssystem`,
+        button: "🎲 Spinny öffnen",
+      },
+      tr: {
+        text: (name) => `👋 Merhaba, ${name}!\n\n🎲 *Spinny* Telegram içinde rastgele bir görüntülü sohbet.\n\nAşağıdaki butona dokun, kamera erişimine izin ver — saniyeler içinde dünyanın herhangi bir yerinden biriyle bağlanacaksın.\n\n• 🌍 Dile göre eşleştirme\n• ❤️ Görüşme sırasında tepkiler\n• ⭐ Cinsiyet filtreli Premium\n• 🚩 Moderasyon sistemi`,
+        button: "🎲 Spinny'yi Aç",
+      },
+      es: {
+        text: (name) => `👋 ¡Hola, ${name}!\n\n🎲 *Spinny* es un videochat aleatorio directo en Telegram.\n\nToca el botón de abajo, permite el acceso a la cámara — y en segundos estarás conectado con alguien nuevo de cualquier parte del mundo.\n\n• 🌍 Emparejamiento por idioma\n• ❤️ Reacciones durante la llamada\n• ⭐ Premium con filtro de género\n• 🚩 Sistema de moderación`,
+        button: "🎲 Abrir Spinny",
+      },
+    };
+
+    const g = GREETINGS[langCode] || GREETINGS.ru;
 
     await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
       method: "POST",
@@ -444,12 +488,12 @@ app.post("/tg-webhook", async (req, res) => {
       body: JSON.stringify({
         chat_id: userId,
         photo: "https://spinnyapp.ru/spinny_logo.png",
-        caption: `👋 Привет, ${firstName}!\n\n🎲 *Spinny* — случайный видеочат прямо в Telegram.\n\nНажми кнопку ниже, разреши доступ к камере — и через секунды окажешься на связи с новым собеседником из любой точки мира.\n\n• 🌍 Мэтчинг по языку\n• ❤️ Реакции во время звонка\n• ⭐ Premium с фильтром по полу\n• 🚩 Система модерации`,
+        caption: g.text(firstName),
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [[
             {
-              text: "🎲 Открыть Spinny",
+              text: g.button,
               web_app: { url: "https://spinnyapp.ru" }
             }
           ]]
@@ -489,6 +533,20 @@ app.post("/tg-webhook", async (req, res) => {
         body: JSON.stringify({
           chat_id: telegramId,
           text: "✅ Ваш аккаунт разблокирован! Открывайте Spinny и продолжайте общение.",
+        }),
+      });
+      return;
+    }
+
+    if (product === "donate") {
+      console.log("[donate] получен донат от", telegramId, "| Stars:", payment.total_amount, "| charge:", chargeId);
+
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: telegramId,
+          text: `❤️ Спасибо огромное за поддержку — ${payment.total_amount} Stars! Это очень помогает развитию Spinny.`,
         }),
       });
       return;

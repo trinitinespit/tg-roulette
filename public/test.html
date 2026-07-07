@@ -486,6 +486,10 @@ html, body {
       ⭐ Получить Premium
     </button>
 
+    <button class="btn-premium" id="btnDonate" style="margin-top:8px;background:rgba(255,255,255,0.06);" onclick="openDonateModal()">
+      ❤️ Поддержать проект
+    </button>
+
     <p class="disclaimer">
       Используя видеочат, вы соглашаетесь с <span id="rulesLink" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span>.<br>
       Нарушители будут заблокированы.
@@ -516,7 +520,6 @@ html, body {
       <button class="btn-reaction" onclick="sendReaction('😊')">😊</button>
       <button class="btn-reaction" onclick="sendReaction('👌')">👌</button>
       <button class="btn-reaction" onclick="sendReaction('😍')">😍</button>
-      <button class="btn-reaction" onclick="sendReaction('💬')">💬</button>
     </div>
 
     <!-- Управление -->
@@ -617,6 +620,36 @@ html, body {
     </p>
   </div>
 </div>
+
+<!-- Попап доната -->
+<div class="modal-backdrop" id="donateModal" hidden onclick="closeDonateModal(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">❤️ Поддержать Spinny</div>
+    <div style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
+      Любая сумма помогает развивать проект. Спасибо!
+    </div>
+    <input
+      type="number"
+      id="donateAmountInput"
+      placeholder="Сумма в Stars"
+      min="1"
+      max="100000"
+      style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:16px;margin-bottom:12px;text-align:center;"
+    />
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="modal-option" style="flex:1;justify-content:center;" onclick="setDonateAmount(100)">100</button>
+      <button class="modal-option" style="flex:1;justify-content:center;" onclick="setDonateAmount(500)">500</button>
+      <button class="modal-option" style="flex:1;justify-content:center;" onclick="setDonateAmount(1000)">1000</button>
+    </div>
+    <button class="btn-premium" id="donateSubmitBtn" onclick="submitDonate()" style="width:100%;">
+      ❤️ Задонатить
+    </button>
+    <p style="font-size:11px;color:#9AB2CC;text-align:center;margin-top:10px;">
+      После нажатия инвойс придёт в чат с ботом
+    </p>
+  </div>
+</div>
+
 <div id="emojiLayer" style="position:fixed;inset:0;pointer-events:none;z-index:1000;"></div>
 <div class="error-toast" id="errorToast"></div>
 
@@ -923,7 +956,17 @@ function doBlock() {
   doFind();
 }
 
-async function doReport() {
+function doReport() {
+  if (!room) return;
+  const confirmMsg = "Вы точно хотите пожаловаться на этого пользователя? Жалоба может привести к блокировке его аккаунта.";
+  if (tg && typeof tg.showConfirm === "function") {
+    tg.showConfirm(confirmMsg, (ok) => { if (ok) doReportConfirmed(); });
+  } else {
+    if (confirm(confirmMsg)) doReportConfirmed();
+  }
+}
+
+async function doReportConfirmed() {
   if (!room) return;
   try {
     const c = document.createElement("canvas");
@@ -1063,6 +1106,46 @@ function closePremiumModal(e) {
 function buyPremium(product) {
   socket.emit("buy-premium", { product });
   document.getElementById("premiumModal").hidden = true;
+}
+
+// ─── Донат ──────────────────────────────────────────────
+function openDonateModal() {
+  document.getElementById("donateModal").hidden = false;
+}
+function closeDonateModal(e) {
+  if (!e || e.target === document.getElementById("donateModal"))
+    document.getElementById("donateModal").hidden = true;
+}
+function setDonateAmount(v) {
+  document.getElementById("donateAmountInput").value = v;
+}
+async function submitDonate() {
+  const input = document.getElementById("donateAmountInput");
+  const amount = parseInt(input.value, 10);
+  if (!amount || amount < 1) {
+    showError("Введите корректную сумму");
+    return;
+  }
+  const btn = document.getElementById("donateSubmitBtn");
+  btn.disabled = true;
+  btn.textContent = "📨 Отправляем инвойс...";
+  try {
+    const r = await fetch("/create-invoice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ telegramId: myTelegramId, product: "donate", amount }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "Неизвестная ошибка");
+    showError("📨 Инвойс на донат отправлен в чат с ботом");
+    closeDonateModal();
+    input.value = "";
+  } catch (e) {
+    showError("Ошибка отправки инвойса: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "❤️ Задонатить";
+  }
 }
 
 function applyPremiumUI(premium) {
