@@ -1405,6 +1405,12 @@ io.on("connection", (socket) => {
     socket.to(room).emit("signal", data);
   });
 
+  // Диагностика WebRTC с клиента — чтобы видеть состояние соединения (ICE/connection state,
+  // получен ли трек, есть ли ошибки) прямо в серверных логах, без доступа к консоли устройства.
+  socket.on("webrtc-debug", ({ event, detail }) => {
+    console.log("[webrtc]", socket.id, "|", event, "|", detail);
+  });
+
   socket.on("reaction", ({ emoji }) => {
     const room = roomOf.get(socket.id);
     console.log("[reaction]", socket.id, "->", emoji, "| roomOf:", room, "| partners:", partners.get(socket.id));

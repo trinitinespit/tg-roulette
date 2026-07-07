@@ -1092,7 +1092,12 @@ socket.on("matched", data => {
   searchOverlay.hidden = true;
   btnNext.disabled = false;
   clearChatMessages();
-  createPeer(data.initiator);
+  try {
+    createPeer(data.initiator);
+  } catch (e) {
+    socket.emit("webrtc-debug", { event: "createPeer-throw", detail: e.message });
+    showError("Не удалось начать звонок: " + e.message);
+  }
 });
 
 socket.on("partner-left", () => {
@@ -1168,21 +1173,43 @@ function createPeer(initiator) {
   pc.ontrack = e => {
     remoteVideo.srcObject = e.streams[0];
     remoteStreamActive = true;
+    socket.emit("webrtc-debug", { event: "ontrack", detail: `streams=${e.streams.length}` });
   };
 
   pc.onicecandidate = e => {
-    if (e.candidate) socket.emit("signal", { room, data: { candidate: e.candidate } });
+    if (e.candidate) {
+      socket.emit("signal", { room, data: { candidate: e.candidate } });
+      socket.emit("webrtc-debug", { event: "onicecandidate", detail: e.candidate.type || e.candidate.candidate?.split(" ")[7] || "?" });
+    } else {
+      socket.emit("webrtc-debug", { event: "onicecandidate", detail: "gathering-complete (null candidate)" });
+    }
   };
 
   pc.oniceconnectionstatechange = () => {
+    socket.emit("webrtc-debug", { event: "iceConnectionState", detail: pc?.iceConnectionState });
     if (pc?.iceConnectionState === "failed") showError("Соединение прервано. Нажмите Дальше.");
+  };
+
+  pc.onconnectionstatechange = () => {
+    socket.emit("webrtc-debug", { event: "connectionState", detail: pc?.connectionState });
+  };
+
+  pc.onicegatheringstatechange = () => {
+    socket.emit("webrtc-debug", { event: "iceGatheringState", detail: pc?.iceGatheringState });
+  };
+
+  pc.onsignalingstatechange = () => {
+    socket.emit("webrtc-debug", { event: "signalingState", detail: pc?.signalingState });
   };
 
   if (initiator) {
     pc.createOffer()
       .then(o => pc.setLocalDescription(o))
       .then(() => socket.emit("signal", { room, data: { offer: pc.localDescription } }))
-      .catch(e => showError("Ошибка: " + e.message));
+      .catch(e => {
+        showError("Ошибка: " + e.message);
+        socket.emit("webrtc-debug", { event: "createOffer-error", detail: e.message });
+      });
   }
 }
 
