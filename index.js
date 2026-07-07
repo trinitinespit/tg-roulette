@@ -617,6 +617,7 @@ app.get("/admin", adminAuth, async (req, res) => {
 
   // Считаем онлайн прямо из памяти сервера
   const onlineCount = telegramUserOf.size;
+  const activeCalls = getActiveCallsCount();
 
   res.send(`<!doctype html>
 <html lang="ru">
@@ -664,6 +665,7 @@ app.get("/admin", adminAuth, async (req, res) => {
 <div class="header">
   <h1>⚙️ Spinny Admin</h1>
   <span class="badge">🟢 ${onlineCount} онлайн</span>
+  <span class="badge" style="background:#38bdf8;">📞 ${activeCalls} звонков сейчас</span>
 </div>
 
 <div class="tabs">
@@ -681,6 +683,8 @@ app.get("/admin", adminAuth, async (req, res) => {
   <div class="section active" id="tab-overview">
     <div class="stats">
       <div class="stat"><div class="stat-num">${onlineCount}</div><div class="stat-label">Онлайн сейчас</div></div>
+      <div class="stat"><div class="stat-num">${activeCalls}</div><div class="stat-label">Звонков сейчас</div></div>
+      <div class="stat"><div class="stat-num">${peakCallsToday}</div><div class="stat-label">Пик звонков сегодня</div></div>
       <div class="stat"><div class="stat-num">${users.rowCount}</div><div class="stat-label">Юзеров (100)</div></div>
       <div class="stat"><div class="stat-num">${bans.rowCount}</div><div class="stat-label">Банов</div></div>
       <div class="stat"><div class="stat-num">${reports.rows.filter(r=>r.verdict==='violation'||r.verdict==='csam').length}</div><div class="stat-label">Нарушений</div></div>
@@ -970,6 +974,29 @@ app.get("/ice-servers", async (req, res) => {
 let matchLock = false; // ГЛОБАЛЬНЫЙ — защищает от параллельных tryMatch
 const partners = new Map();
 const roomOf = new Map();
+
+// Трекер пиковой нагрузки — сколько одновременных звонков было максимум за сегодня.
+// Сбрасывается сам при смене календарной даты. Хранится только в памяти,
+// поэтому обнуляется при рестарте сервера — этого достаточно для мониторинга нагрузки.
+let peakCallsToday = 0;
+let peakCallsDate = new Date().toISOString().slice(0, 10);
+
+function getActiveCallsCount() {
+  return Math.floor(partners.size / 2);
+}
+
+function trackCallsPeak() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== peakCallsDate) {
+    peakCallsDate = today;
+    peakCallsToday = 0;
+  }
+  const current = getActiveCallsCount();
+  if (current > peakCallsToday) {
+    peakCallsToday = current;
+    console.log("[load] новый пик одновременных звонков сегодня:", peakCallsToday);
+  }
+}
 const bannedSockets = new Set(); // сокеты забаненных юзеров — оставляем на связи, чтобы могли оплатить разбан
 const telegramUserOf = new Map();
 
@@ -1092,6 +1119,7 @@ io.on("connection", (socket) => {
     partners.set(b, a);
     roomOf.set(a, room);
     roomOf.set(b, room);
+    trackCallsPeak();
 
     const langA = getLang(a) || "any";
     const langB = getLang(b) || "any";
@@ -1372,6 +1400,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("signal", ({ room, data }) => {
+    const kind = data?.offer ? "offer" : data?.answer ? "answer" : data?.candidate ? "candidate" : "unknown";
+    console.log("[signal]", socket.id, "->", room, "|", kind);
     socket.to(room).emit("signal", data);
   });
 
