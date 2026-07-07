@@ -8,6 +8,9 @@ const { Server } = require("socket.io");
 console.log("[env] BOT_TOKEN:", process.env.TELEGRAM_BOT_TOKEN ? "SET" : "NOT SET");
 console.log("[env] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
 console.log("[env] METERED_APP_NAME:", process.env.METERED_APP_NAME ? "SET" : "NOT SET");
+console.log("[env] METERED_API_KEY:", process.env.METERED_API_KEY ? "SET" : "NOT SET");
+console.log("[env] TURN_HOST:", process.env.TURN_HOST ? `SET (${process.env.TURN_HOST})` : "NOT SET");
+console.log("[env] TURN_SECRET:", process.env.TURN_SECRET ? "SET" : "NOT SET");
 
 const app = express();
 const server = http.createServer(app);
@@ -878,6 +881,13 @@ app.get("/ice-servers", async (req, res) => {
       console.error("[ice-servers] свой TURN не удалось сконфигурировать:", e.message);
       // падаем ниже на Metered/STUN
     }
+  } else {
+    console.warn(
+      "[ice-servers] свой TURN пропущен: TURN_HOST",
+      host ? "задан" : "НЕ ЗАДАН",
+      "| TURN_SECRET",
+      secret ? "задан" : "НЕ ЗАДАН"
+    );
   }
 
   // 2) Временный fallback — Metered (пока свой TURN не готов)
