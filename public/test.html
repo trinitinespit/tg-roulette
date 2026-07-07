@@ -1153,16 +1153,22 @@ socket.on("unbanned", () => {
 });
 
 // ─── WebRTC ─────────────────────────────────────────────
+let remoteStreamActive = false;
+
 function cleanupPeer() {
   if (pc) { pc.close(); pc = null; }
   remoteVideo.srcObject = null;
+  remoteStreamActive = false;
 }
 
 function createPeer(initiator) {
   pc = new RTCPeerConnection({ iceServers });
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
-  pc.ontrack = e => { remoteVideo.srcObject = e.streams[0]; };
+  pc.ontrack = e => {
+    remoteVideo.srcObject = e.streams[0];
+    remoteStreamActive = true;
+  };
 
   pc.onicecandidate = e => {
     if (e.candidate) socket.emit("signal", { room, data: { candidate: e.candidate } });
@@ -1460,7 +1466,7 @@ socket.on("chat-message", ({ text }) => {
   }
 
   function onStart(x, y, el) {
-    if (appState !== "matched" || isInteractive(el)) return;
+    if (appState !== "matched" || !remoteStreamActive || isInteractive(el)) return;
     dragging = true;
     startX = x; startY = y; curX = x;
     remoteVideo.style.transition = "none";
