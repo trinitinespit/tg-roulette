@@ -341,7 +341,7 @@ html, body {
   position: absolute;
   left: 12px;
   right: 70px;
-  bottom: 150px;
+  bottom: 150px; /* фолбэк-значение, реальное выставляется JS в updateChatLivePosition() */
   max-height: 200px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -1044,6 +1044,7 @@ async function doNext() {
   if (!stream) return;
   cleanupPeer();
   room = null;
+  clearChatMessages();
   socket.emit("skip");
   await maybeShowAd();
   doFind();
@@ -1052,6 +1053,7 @@ async function doNext() {
 function doBlock() {
   cleanupPeer();
   room = null;
+  clearChatMessages();
   socket.emit("block");
   doFind();
 }
@@ -1077,6 +1079,7 @@ async function doReportConfirmed() {
   } catch(e) {}
   cleanupPeer();
   room = null;
+  clearChatMessages();
   socket.emit("skip");
   await maybeShowAd();
   doFind();
@@ -1373,6 +1376,28 @@ function spawnEmoji(emoji, x, y) {
 // ─── Текстовый чат — живая лента (Instagram Live style) ──
 const MAX_CHAT_MESSAGES = 200; // ограничение DOM, чтобы лента не пухла бесконечно
 let chatInputOpen = false;
+
+// Панель управления (call-bottom) меняет высоту: открытие поля ввода,
+// разные размеры экрана, safe-area на разных телефонах. Чтобы лента
+// сообщений никогда не перекрывала кнопки/поле ввода, отслеживаем
+// реальную высоту call-bottom и подставляем её как отступ снизу.
+(function setupChatLivePositioning() {
+  const callBottomEl = document.querySelector(".call-bottom");
+  const chatLiveEl = document.getElementById("chatLive");
+  if (!callBottomEl || !chatLiveEl) return;
+
+  function update() {
+    chatLiveEl.style.bottom = (callBottomEl.offsetHeight + 10) + "px";
+  }
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(update).observe(callBottomEl);
+  } else {
+    window.addEventListener("resize", update);
+    setInterval(update, 400); // фолбэк для очень старых WebView без ResizeObserver
+  }
+  update();
+})();
 
 function toggleChat() {
   chatInputOpen = !chatInputOpen;
