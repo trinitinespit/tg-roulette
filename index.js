@@ -1385,6 +1385,18 @@ io.on("connection", (socket) => {
     socket.to(room).emit("reaction", { emoji });
   });
 
+  socket.on("chat-message", ({ text }) => {
+    if (bannedSockets.has(socket.id)) return;
+
+    const room = roomOf.get(socket.id);
+    if (!room) return;
+
+    const clean = String(text ?? "").trim().slice(0, 500);
+    if (!clean) return;
+
+    socket.to(room).emit("chat-message", { text: clean });
+  });
+
   socket.on("disconnect", (reason) => {
     console.log("[disconnect]", socket.id, reason);
     removeFromQueues(socket.id);
