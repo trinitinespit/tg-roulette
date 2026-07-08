@@ -1584,10 +1584,11 @@ io.on("connection", (socket) => {
 
       const formData = new FormData();
       formData.append("media", new Blob([buffer], { type: "image/jpeg" }), "report.jpg");
-      // nudity-2.1 — обнаженка/сексуальный контент
-      // faces — определяет возраст лиц на кадре
-      // minors — специализированная модель защиты несовершеннолетних
-      formData.append("models", "nudity-2.1,faces,minors");
+      // nudity-2.1 — обнажёнка/сексуальный контент
+      // face-age — определение несовершеннолетних по лицу (faces[].attributes.age.minor, 0-1).
+      // ВАЖНО: модели "faces" и "minors" не существуют в API Sightengine — из-за них раньше
+      // весь запрос падал целиком (status: failure), и любая жалоба тихо считалась "clean".
+      formData.append("models", "nudity-2.1,face-age");
       formData.append("api_user", apiUser);
       formData.append("api_secret", apiSecret);
 
@@ -1595,27 +1596,30 @@ io.on("connection", (socket) => {
       const result = await r.json();
       console.log("[report] Sightengine полный ответ:", JSON.stringify(result));
 
+      if (result?.status !== "success") {
+        // Запрос к Sightengine упал (неверные модели, квота, сбой API и т.п.) —
+        // не считаем это "чисто", а явно помечаем как требующее ручной проверки.
+        console.error("[report] Sightengine вернул ошибку:", result?.error?.message || "неизвестная ошибка");
+        await saveReport({ reporterTgId, offenderTgId, verdict: "unreviewed", nudityScore: null, imageBase64: imageForStorage });
+        return;
+      }
+
       // --- Nudity check ---
-      const raw = result?.nudity?.sexual_activity ?? result?.nudity?.raw ?? 0;
-      const partial = result?.nudity?.suggestive ?? result?.nudity?.partial ?? 0;
+      const raw = result?.nudity?.sexual_activity ?? 0;
+      const partial = result?.nudity?.suggestive ?? 0;
       const nudityScore = Math.max(raw, partial);
       const isNudity = nudityScore > 0.6;
 
-      // --- Minors check ---
-      // Sightengine возвращает minor: { found: true/false, score: 0-1 }
-      const minorFound = result?.minor?.found === true || (result?.minor?.score ?? 0) > 0.5;
-
-      // --- Faces age check (дополнительная защита) ---
-      // Если среди определённых лиц есть кто-то моложе 18 — флаг
+      // --- Minors check (face-age: faces[].attributes.age.minor, 0-1) ---
       const faces = result?.faces ?? [];
-      const hasMinorFace = faces.some(f => f.age?.min < 18);
+      const maxMinorScore = faces.reduce((max, f) => Math.max(max, f?.attributes?.age?.minor ?? 0), 0);
+      const isMinorViolation = maxMinorScore > 0.5;
 
-      const isMinorViolation = minorFound || hasMinorFace;
       const isViolation = isNudity || isMinorViolation;
 
       // Определяем причину бана для логов
       let banReason = null;
-      if (isMinorViolation) banReason = "CSAM/minors — auto ban after report";
+      if (isMinorViolation) banReason = `CSAM/minors (score: ${maxMinorScore.toFixed(2)}) — auto ban after report`;
       else if (isNudity) banReason = `nudity (score: ${nudityScore.toFixed(2)}) — auto ban after report`;
 
       const verdict = isViolation
@@ -1624,7 +1628,7 @@ io.on("connection", (socket) => {
 
       console.log("[report] вердикт:", verdict,
         "| nudity:", nudityScore.toFixed(2),
-        "| minor:", isMinorViolation,
+        "| minorScore:", maxMinorScore.toFixed(2),
         "| ban:", banReason);
 
       await saveReport({ reporterTgId, offenderTgId, verdict, nudityScore, imageBase64: imageForStorage });
