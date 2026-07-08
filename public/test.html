@@ -1694,7 +1694,7 @@ let chatInputOpen = false;
 
 // Автозакрытие поля ввода чата после периода бездействия
 let chatInputIdleTimer = null;
-const CHAT_INPUT_IDLE_MS = 15000; // 15 секунд без активности — сворачиваем поле
+const CHAT_INPUT_IDLE_MS = 7000; // 7 секунд без активности — сворачиваем поле
 
 function resetChatInputIdleTimer() {
   if (chatInputIdleTimer) clearTimeout(chatInputIdleTimer);
