@@ -99,6 +99,9 @@ async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
     ALTER TABLE reports ADD COLUMN IF NOT EXISTS image_base64 TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reminder_stage INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reminders_blocked BOOLEAN NOT NULL DEFAULT FALSE;
   `).catch(e => console.warn("[db] миграция users:", e.message));
 
   // Индекс ускоряет проверку бана при каждом подключении
@@ -143,10 +146,12 @@ async function upsertUser(user) {
     INSERT INTO users (telegram_id, username, first_name, language_code, last_seen_at)
     VALUES ($1, $2, $3, $4, NOW())
     ON CONFLICT (telegram_id) DO UPDATE SET
-      username      = EXCLUDED.username,
-      first_name    = EXCLUDED.first_name,
-      language_code = EXCLUDED.language_code,
-      last_seen_at  = NOW()
+      username        = EXCLUDED.username,
+      first_name      = EXCLUDED.first_name,
+      language_code   = EXCLUDED.language_code,
+      last_seen_at    = NOW(),
+      reminder_stage  = 0,
+      last_reminder_at = NULL
   `, [user.id, user.username || null, user.first_name || null, user.language_code || null]);
 }
 
@@ -1683,6 +1688,101 @@ io.on("connection", (socket) => {
     clearMatch(socket.id, "disconnect:" + reason);
   });
 });
+
+// ---------- Напоминания неактивным пользователям ----------
+// Трёхступенчатая схема: 48ч → 7 дней → 30 дней, разные тексты на каждом этапе,
+// дальше не напоминаем вообще (чтобы не превратиться в спам и не словить блок бота).
+// Цикл сбрасывается сам, как только пользователь снова заходит (см. upsertUser).
+const REMINDER_STAGES = [
+  { stage: 1, afterHours: 48 },
+  { stage: 2, afterHours: 24 * 7 },
+  { stage: 3, afterHours: 24 * 30 },
+];
+
+const REMINDER_MESSAGES = {
+  1: {
+    ru: { text: (name) => `👋 ${name}, привет! Соскучились — загляни в Spinny, там уже ждут новые собеседники со всего мира 🎲`, button: "🎲 Открыть Spinny" },
+    en: { text: (name) => `👋 Hey ${name}! We miss you — come back to Spinny, new people from all over the world are waiting 🎲`, button: "🎲 Open Spinny" },
+  },
+  2: {
+    ru: { text: (name) => `🎲 ${name}, пока тебя не было, в Spinny прошло много новых знакомств! Самое время вернуться и пообщаться 👋`, button: "🎲 Вернуться в Spinny" },
+    en: { text: (name) => `🎲 ${name}, lots of new people have joined Spinny since you left! Perfect time to come back and chat 👋`, button: "🎲 Back to Spinny" },
+  },
+  3: {
+    ru: { text: (name) => `👋 ${name}, давно не виделись. Если Spinny всё ещё интересен — будем рады видеть тебя снова. Больше напоминать не будем 🙂`, button: "🎲 Открыть Spinny" },
+    en: { text: (name) => `👋 ${name}, it's been a while. If you're still interested in Spinny, we'd love to see you back. This is the last reminder 🙂`, button: "🎲 Open Spinny" },
+  },
+};
+
+async function sendReminders() {
+  if (!db) return;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return;
+
+  for (const { stage, afterHours } of REMINDER_STAGES) {
+    let candidates;
+    try {
+      candidates = await db.query(
+        `SELECT u.telegram_id, u.first_name, u.language_code
+         FROM users u
+         WHERE u.reminder_stage = $1
+           AND u.reminders_blocked = FALSE
+           AND u.last_seen_at < NOW() - INTERVAL '1 hour' * $2
+           AND NOT EXISTS (SELECT 1 FROM bans b WHERE b.telegram_id = u.telegram_id)
+         LIMIT 200`,
+        [stage - 1, afterHours]
+      );
+    } catch (e) {
+      console.error("[reminders] ошибка запроса к БД:", e.message);
+      continue;
+    }
+
+    if (!candidates.rowCount) continue;
+    console.log(`[reminders] этап ${stage}: кандидатов —`, candidates.rowCount);
+
+    for (const u of candidates.rows) {
+      const lang = (u.language_code || "ru").split("-")[0];
+      const msg = REMINDER_MESSAGES[stage][lang] || REMINDER_MESSAGES[stage].ru;
+      const name = u.first_name || "друг";
+
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: u.telegram_id,
+            text: msg.text(name),
+            reply_markup: {
+              inline_keyboard: [[{ text: msg.button, web_app: { url: "https://spinnyapp.ru" } }]]
+            }
+          }),
+        });
+        const data = await r.json();
+
+        if (!data.ok && (data.error_code === 403 || /blocked/i.test(data.description || ""))) {
+          // Пользователь заблокировал бота — больше не пытаемся, чтобы не тратить лимиты API впустую
+          await db.query("UPDATE users SET reminders_blocked = TRUE WHERE telegram_id = $1", [u.telegram_id]);
+        } else if (data.ok) {
+          await db.query(
+            "UPDATE users SET reminder_stage = $1, last_reminder_at = NOW() WHERE telegram_id = $2",
+            [stage, u.telegram_id]
+          );
+        }
+      } catch (e) {
+        console.error("[reminders] ошибка отправки", u.telegram_id, ":", e.message);
+      }
+
+      // Небольшая пауза между сообщениями, чтобы не упереться в rate limit Telegram
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
+// Проверяем раз в час — этого достаточно с учётом того, что пороги измеряются днями
+const REMINDER_INTERVAL_MS = 60 * 60 * 1000;
+setInterval(() => {
+  sendReminders().catch((e) => console.error("[reminders] необработанная ошибка:", e.message));
+}, REMINDER_INTERVAL_MS);
 
 // ---------- Старт ----------
 // Сервер стартует НЕМЕДЛЕННО — Amvera/Render требуют чтобы порт слушался быстро.
