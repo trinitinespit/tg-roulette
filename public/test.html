@@ -1417,10 +1417,22 @@ let chatInputOpen = false;
 (function setupChatLivePositioning() {
   const callBottomEl = document.querySelector(".call-bottom");
   const chatLiveEl = document.getElementById("chatLive");
+  const localVideoEl = document.getElementById("localVideo");
   if (!callBottomEl || !chatLiveEl) return;
 
   function update() {
     chatLiveEl.style.bottom = (callBottomEl.offsetHeight + 10) + "px";
+
+    // На iOS открытие клавиатуры сжимает видимую область (visualViewport),
+    // но сам layout-вьюпорт (и абсолютные позиции) остаётся прежним —
+    // из-за этого фиксированная max-height начинает перекрывать превью камеры.
+    // Пересчитываем доступное место КАЖДЫЙ раз, когда меняется видимая высота.
+    const visibleH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const localVideoBottom = localVideoEl ? localVideoEl.getBoundingClientRect().bottom : 90;
+    const bottomOffset = callBottomEl.offsetHeight + 10;
+    // Место между низом превью камеры и верхом панели управления, с запасом
+    const available = visibleH - bottomOffset - localVideoBottom - 16;
+    chatLiveEl.style.maxHeight = Math.max(60, Math.min(200, available)) + "px";
   }
 
   if (window.ResizeObserver) {
@@ -1429,14 +1441,42 @@ let chatInputOpen = false;
     window.addEventListener("resize", update);
     setInterval(update, 400); // фолбэк для очень старых WebView без ResizeObserver
   }
+
+  // Клавиатура на iOS меняет именно visualViewport, а не window.innerHeight —
+  // без этого слушателя лента не узнает, что стало меньше места.
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", update);
+    window.visualViewport.addEventListener("scroll", update);
+  }
+
   update();
 })();
+
+// Автозакрытие поля ввода чата после периода бездействия
+let chatInputIdleTimer = null;
+const CHAT_INPUT_IDLE_MS = 15000; // 15 секунд без активности — сворачиваем поле
+
+function resetChatInputIdleTimer() {
+  if (chatInputIdleTimer) clearTimeout(chatInputIdleTimer);
+  if (!chatInputOpen) return;
+  chatInputIdleTimer = setTimeout(() => {
+    if (chatInputOpen) toggleChat();
+  }, CHAT_INPUT_IDLE_MS);
+}
 
 function toggleChat() {
   chatInputOpen = !chatInputOpen;
   document.getElementById("chatInputPanel").classList.toggle("open", chatInputOpen);
-  if (chatInputOpen) document.getElementById("chatInput").focus();
+  if (chatInputOpen) {
+    document.getElementById("chatInput").focus();
+    resetChatInputIdleTimer();
+  } else if (chatInputIdleTimer) {
+    clearTimeout(chatInputIdleTimer);
+  }
 }
+
+document.getElementById("chatInput")?.addEventListener("input", resetChatInputIdleTimer);
+document.getElementById("chatInput")?.addEventListener("focus", resetChatInputIdleTimer);
 
 function isChatScrolledNearBottom() {
   const box = document.getElementById("chatLive");
@@ -1472,6 +1512,7 @@ function sendChatMessage() {
   socket.emit("chat-message", { text });
   appendChatMessage(text, true);
   input.value = "";
+  resetChatInputIdleTimer();
 }
 
 document.getElementById("chatInput")?.addEventListener("keydown", (e) => {
