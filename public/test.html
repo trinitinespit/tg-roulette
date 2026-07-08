@@ -1295,13 +1295,23 @@ function doReport() {
 
 async function doReportConfirmed() {
   if (!room) return;
+  let imageBase64 = null;
   try {
     const c = document.createElement("canvas");
     c.width = remoteVideo.videoWidth || 320;
     c.height = remoteVideo.videoHeight || 240;
     c.getContext("2d").drawImage(remoteVideo, 0, 0, c.width, c.height);
-    socket.emit("report", { room, imageBase64: c.toDataURL("image/jpeg", 0.85) });
-  } catch(e) {}
+    imageBase64 = c.toDataURL("image/jpeg", 0.85);
+  } catch (e) {
+    // Раньше эта ошибка тихо проглатывалась, и socket.emit("report", ...) ниже
+    // вообще не вызывался — жалоба пропадала без следа. Теперь логируем и
+    // отправляем жалобу всё равно (без скриншота), чтобы она хотя бы не терялась.
+    console.error("[report] не удалось сделать скриншот:", e.message);
+    socket.emit("webrtc-debug", { event: "report-screenshot-error", detail: e.message });
+  }
+  socket.emit("webrtc-debug", { event: "report-emit", detail: `room=${room}, hasImage=${!!imageBase64}` });
+  socket.emit("report", { room, imageBase64 });
+
   cleanupPeer();
   room = null;
   clearChatMessages();
