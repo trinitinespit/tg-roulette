@@ -102,6 +102,7 @@ async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reminder_stage INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reminders_blocked BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE bans ADD COLUMN IF NOT EXISTS evidence_image TEXT;
   `).catch(e => console.warn("[db] миграция users:", e.message));
 
   // Индекс ускоряет проверку бана при каждом подключении
@@ -125,7 +126,16 @@ async function isBanned(telegramId) {
   return r.rowCount > 0;
 }
 
-async function banUser(telegramId, reason) {
+async function getBanInfo(telegramId) {
+  if (!db || !telegramId) return null;
+  const r = await db.query(
+    "SELECT reason, evidence_image FROM bans WHERE telegram_id = $1 LIMIT 1",
+    [telegramId]
+  );
+  return r.rows[0] || null;
+}
+
+async function banUser(telegramId, reason, evidenceImage = null) {
   if (!telegramId) return;
   if (!db) {
     bannedUsersMemory.add(telegramId);
@@ -134,8 +144,8 @@ async function banUser(telegramId, reason) {
   }
   // INSERT OR IGNORE — не падаем если пользователь уже забанен
   await db.query(
-    "INSERT INTO bans (telegram_id, reason) VALUES ($1, $2) ON CONFLICT (telegram_id) DO NOTHING",
-    [telegramId, reason || null]
+    "INSERT INTO bans (telegram_id, reason, evidence_image) VALUES ($1, $2, $3) ON CONFLICT (telegram_id) DO NOTHING",
+    [telegramId, reason || null, evidenceImage || null]
   );
   console.log("[ban] (db) добавлен:", telegramId);
 }
@@ -753,7 +763,7 @@ app.get("/admin", adminAuth, async (req, res) => {
       ${reports.rows.map(r => `
       <tr>
         <td>${r.image_base64
-          ? `<a href="${r.image_base64.startsWith('data:') ? r.image_base64 : 'data:image/jpeg;base64,' + r.image_base64}" target="_blank"><img src="${r.image_base64.startsWith('data:') ? r.image_base64 : 'data:image/jpeg;base64,' + r.image_base64}" style="width:60px;height:45px;object-fit:cover;border-radius:6px;display:block;"/></a>`
+          ? `<img src="${r.image_base64.startsWith('data:') ? r.image_base64 : 'data:image/jpeg;base64,' + r.image_base64}" style="width:60px;height:45px;object-fit:cover;border-radius:6px;display:block;cursor:pointer;" onclick="openLightbox(this.src)"/>`
           : '<span style="color:#475569;font-size:11px;">нет</span>'}</td>
         <td>@${r.reporter_name || r.reporter_tg_id || '—'}</td>
         <td>@${r.offender_name || r.offender_tg_id || '—'}</td>
@@ -861,8 +871,21 @@ app.get("/admin", adminAuth, async (req, res) => {
 
 </div>
 
+<!-- Лайтбокс для просмотра скриншотов в полный размер -->
+<div id="lightbox" onclick="closeLightbox()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:99999;align-items:center;justify-content:center;cursor:zoom-out;">
+  <img id="lightboxImg" style="max-width:90vw;max-height:90vh;border-radius:8px;" />
+</div>
+
 <script>
 const SECRET = new URLSearchParams(location.search).get('secret') || '';
+
+function openLightbox(src) {
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightbox').style.display = 'flex';
+}
+function closeLightbox() {
+  document.getElementById('lightbox').style.display = 'none';
+}
 
 function showTab(name) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -1310,7 +1333,13 @@ io.on("connection", (socket) => {
       if (await isBanned(user.id)) {
         console.log("[auth] ЗАБАНЕН:", user.id);
         bannedSockets.add(socket.id);
-        socket.emit("banned", { reason: "Вы заблокированы за нарушение правил." });
+        const banInfo = await getBanInfo(user.id);
+        // reason в БД — техническая строка для админки (со score и т.п.), пользователю
+        // показываем общую формулировку, но прикладываем реальный скриншот-доказательство
+        socket.emit("banned", {
+          reason: "Вы заблокированы за нарушение правил.",
+          evidenceImage: banInfo?.evidence_image || null,
+        });
         // НЕ отключаем сокет — иначе клиент уйдёт в цикл reconnect→auth→disconnect
         // и не успеет отправить "buy-unban" / получить "invoice-sent" в ответ.
         // Просто не даём забаненному искать собеседников (см. обработчик "find").
@@ -1638,8 +1667,8 @@ io.on("connection", (socket) => {
           ? "Обнаружен контент с участием несовершеннолетних. Аккаунт заблокирован."
           : "Жалоба подтверждена: обнаружен недопустимый контент.";
 
-        await banUser(offenderTgId, banReason);
-        io.to(partnerId).emit("banned", { reason: banMsg });
+        await banUser(offenderTgId, banReason, imageForStorage);
+        io.to(partnerId).emit("banned", { reason: banMsg, evidenceImage: imageForStorage });
         setTimeout(() => io.sockets.sockets.get(partnerId)?.disconnect(true), 500);
         clearMatch(socket.id, "report");
       }
@@ -1650,8 +1679,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("signal", ({ room, data }) => {
-    const kind = data?.offer ? "offer" : data?.answer ? "answer" : data?.candidate ? "candidate" : "unknown";
-    console.log("[signal]", socket.id, "->", room, "|", kind);
+    // Кандидатов на звонок штук 8-10 — логируем только offer/answer (значимые вехи),
+    // иначе лог захламляется десятками строк на каждый звонок.
+    if (data?.offer) console.log("[signal]", socket.id, "->", room, "| offer");
+    else if (data?.answer) console.log("[signal]", socket.id, "->", room, "| answer");
     socket.to(room).emit("signal", data);
   });
 
