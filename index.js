@@ -80,12 +80,25 @@ async function initDb() {
       stars_paid      INTEGER NOT NULL,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS ads (
+      id            SERIAL PRIMARY KEY,
+      type          TEXT NOT NULL DEFAULT 'image',  -- 'image' | 'video'
+      media_url     TEXT NOT NULL,
+      link_url      TEXT,                            -- куда ведёт клик (бот/сайт/канал)
+      title         TEXT,
+      active        BOOLEAN NOT NULL DEFAULT TRUE,
+      impressions   INTEGER NOT NULL DEFAULT 0,
+      clicks        INTEGER NOT NULL DEFAULT 0,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 
   // Миграции — добавляем колонки если их нет (безопасно для существующих таблиц)
   await db.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
+    ALTER TABLE reports ADD COLUMN IF NOT EXISTS image_base64 TEXT;
   `).catch(e => console.warn("[db] миграция users:", e.message));
 
   // Индекс ускоряет проверку бана при каждом подключении
@@ -165,6 +178,15 @@ async function grantPremium(telegramId, days = 30) {
   console.log("[premium] выдан на", days, "дней пользователю", telegramId);
 }
 
+async function revokePremium(telegramId) {
+  if (!db || !telegramId) return;
+  await db.query(
+    "UPDATE users SET is_premium = FALSE, premium_until = NULL WHERE telegram_id = $1",
+    [telegramId]
+  );
+  console.log("[premium] отозван у пользователя", telegramId);
+}
+
 async function setGender(telegramId, gender) {
   if (!db || !telegramId) return;
   await db.query("UPDATE users SET gender = $1 WHERE telegram_id = $2", [gender, telegramId]);
@@ -176,11 +198,11 @@ async function getGender(telegramId) {
   return r.rows[0]?.gender ?? null;
 }
 
-async function saveReport({ reporterTgId, offenderTgId, verdict, nudityScore }) {
+async function saveReport({ reporterTgId, offenderTgId, verdict, nudityScore, imageBase64 }) {
   if (!db) return;
   await db.query(
-    "INSERT INTO reports (reporter_tg_id, offender_tg_id, verdict, nudity_score) VALUES ($1,$2,$3,$4)",
-    [reporterTgId || null, offenderTgId || null, verdict, nudityScore ?? null]
+    "INSERT INTO reports (reporter_tg_id, offender_tg_id, verdict, nudity_score, image_base64) VALUES ($1,$2,$3,$4,$5)",
+    [reporterTgId || null, offenderTgId || null, verdict, nudityScore ?? null, imageBase64 || null]
   );
 }
 
@@ -591,7 +613,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   if (!db) return res.status(503).send("БД недоступна");
 
   try {
-    const [bans, reports, users, unban, blocks] = await Promise.all([
+    const [bans, reports, users, unban, blocks, ads] = await Promise.all([
     db.query(`SELECT b.telegram_id, b.reason, b.banned_at,
               u.username, u.first_name
               FROM bans b LEFT JOIN users u ON u.telegram_id = b.telegram_id
@@ -614,6 +636,7 @@ app.get("/admin", adminAuth, async (req, res) => {
               LEFT JOIN users bu ON bu.telegram_id = bl.blocker_tg_id
               LEFT JOIN users ou ON ou.telegram_id = bl.blocked_tg_id
               ORDER BY bl.created_at DESC LIMIT 200`),
+    db.query(`SELECT * FROM ads ORDER BY created_at DESC LIMIT 100`),
   ]);
 
   // Считаем онлайн прямо из памяти сервера
@@ -650,6 +673,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   .verdict-csam { color: #ef4444; font-weight: 800; background: rgba(239,68,68,0.15); padding: 2px 8px; border-radius: 4px; }
   .verdict-clean { color: #4ade80; }
   .verdict-error { color: #94a3b8; }
+  .verdict-unreviewed { color: #fbbf24; font-weight: 600; }
   .ban-btn { background: #ef4444; border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
   .unban-btn { background: #22c55e; border: none; color: #000; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
   .premium-badge { background: #fbbf24; color: #000; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 700; }
@@ -676,6 +700,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   <div class="tab" onclick="showTab('users')">Пользователи (${users.rowCount})</div>
   <div class="tab" onclick="showTab('unbans')">Разблокировки (${unban.rowCount})</div>
   <div class="tab" onclick="showTab('blocks')">Блоки (${blocks.rowCount})</div>
+  <div class="tab" onclick="showTab('ads')">Реклама (${ads.rowCount})</div>
 </div>
 
 <div class="content">
@@ -719,9 +744,12 @@ app.get("/admin", adminAuth, async (req, res) => {
   <div class="section" id="tab-reports">
     ${reports.rowCount === 0 ? '<div class="empty">Репортов нет</div>' : `
     <table>
-      <tr><th>Жалобщик</th><th>Нарушитель</th><th>Вердикт</th><th>Score</th><th>Дата</th></tr>
+      <tr><th>Скриншот</th><th>Жалобщик</th><th>Нарушитель</th><th>Вердикт</th><th>Score</th><th>Дата</th></tr>
       ${reports.rows.map(r => `
       <tr>
+        <td>${r.image_base64
+          ? `<a href="${r.image_base64.startsWith('data:') ? r.image_base64 : 'data:image/jpeg;base64,' + r.image_base64}" target="_blank"><img src="${r.image_base64.startsWith('data:') ? r.image_base64 : 'data:image/jpeg;base64,' + r.image_base64}" style="width:60px;height:45px;object-fit:cover;border-radius:6px;display:block;"/></a>`
+          : '<span style="color:#475569;font-size:11px;">нет</span>'}</td>
         <td>@${r.reporter_name || r.reporter_tg_id || '—'}</td>
         <td>@${r.offender_name || r.offender_tg_id || '—'}</td>
         <td><span class="verdict-${r.verdict}">${r.verdict}</span></td>
@@ -733,8 +761,13 @@ app.get("/admin", adminAuth, async (req, res) => {
 
   <!-- Пользователи -->
   <div class="section" id="tab-users">
+    <div class="action-row">
+      <input type="number" id="premiumIdInput" placeholder="Telegram ID"/>
+      <input type="number" id="premiumDaysInput" placeholder="Дней" style="width:100px;" value="30"/>
+      <button class="btn" onclick="manualGrantPremium()">Выдать Premium</button>
+    </div>
     <table>
-      <tr><th>TG ID</th><th>Имя</th><th>Статус</th><th>Пол</th><th>Последний вход</th></tr>
+      <tr><th>TG ID</th><th>Имя</th><th>Статус</th><th>Пол</th><th>Последний вход</th><th>Действие</th></tr>
       ${users.rows.map(u => `
       <tr>
         <td>${u.telegram_id}</td>
@@ -742,6 +775,12 @@ app.get("/admin", adminAuth, async (req, res) => {
         <td>${u.is_premium ? '<span class="premium-badge">⭐ Premium</span>' : 'Free'}</td>
         <td>${u.gender || '—'}</td>
         <td>${new Date(u.last_seen_at).toLocaleString('ru')}</td>
+        <td>
+          ${u.is_premium
+            ? `<button class="ban-btn" onclick="manualRevokePremium(${u.telegram_id})">Забрать Premium</button>`
+            : `<button class="unban-btn" onclick="manualGrantPremium(${u.telegram_id})">Выдать 30 дней</button>`}
+          <button class="ban-btn" onclick="manualBanFromUsers(${u.telegram_id})">Забанить</button>
+        </td>
       </tr>`).join('')}
     </table>
   </div>
@@ -781,6 +820,40 @@ app.get("/admin", adminAuth, async (req, res) => {
     </table>`}
   </div>
 
+  <!-- Реклама -->
+  <div class="section" id="tab-ads">
+    <div class="action-row" style="flex-wrap:wrap;">
+      <select id="adType" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:8px;">
+        <option value="image">Картинка (интерстишл между звонками)</option>
+        <option value="video">Видео (во время поиска собеседника)</option>
+      </select>
+      <input type="text" id="adMediaUrl" placeholder="URL картинки/видео" style="width:280px;"/>
+      <input type="text" id="adLinkUrl" placeholder="Ссылка при клике (t.me/... или https://...)" style="width:280px;"/>
+      <input type="text" id="adTitle" placeholder="Название (для себя, необязательно)" style="width:200px;"/>
+      <button class="btn" onclick="addAd()">Добавить рекламу</button>
+    </div>
+    ${ads.rowCount === 0 ? '<div class="empty">Реклама не добавлена</div>' : `
+    <table>
+      <tr><th>Превью</th><th>Тип</th><th>Название</th><th>Ссылка</th><th>Показы</th><th>Клики</th><th>Статус</th><th>Действие</th></tr>
+      ${ads.rows.map(a => `
+      <tr>
+        <td>${a.type === 'image'
+          ? `<img src="${a.media_url}" style="width:70px;height:45px;object-fit:cover;border-radius:6px;"/>`
+          : `<video src="${a.media_url}" style="width:70px;height:45px;object-fit:cover;border-radius:6px;" muted></video>`}</td>
+        <td>${a.type === 'image' ? '🖼️ Картинка' : '🎬 Видео'}</td>
+        <td>${a.title || '—'}</td>
+        <td style="max-width:200px;word-break:break-word;font-size:11px;color:#64748b">${a.link_url || '—'}</td>
+        <td>${a.impressions}</td>
+        <td>${a.clicks}</td>
+        <td>${a.active ? '<span style="color:#4ade80">Активна</span>' : '<span style="color:#64748b">Выключена</span>'}</td>
+        <td>
+          <button class="btn" onclick="toggleAd(${a.id})">${a.active ? 'Выключить' : 'Включить'}</button>
+          <button class="ban-btn" onclick="deleteAd(${a.id})">Удалить</button>
+        </td>
+      </tr>`).join('')}
+    </table>`}
+  </div>
+
 </div>
 
 <script>
@@ -803,6 +876,77 @@ async function manualBan() {
     body: JSON.stringify({ telegramId: parseInt(id), reason: 'manual ban' })
   });
   if (r.ok) { alert('Забанен'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function manualBanFromUsers(id) {
+  if (!confirm('Забанить ' + id + '?')) return;
+  const r = await fetch('/admin/ban', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ telegramId: id, reason: 'manual ban' })
+  });
+  if (r.ok) { alert('Забанен'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function manualGrantPremium(idFromRow) {
+  const id = idFromRow || document.getElementById('premiumIdInput').value;
+  if (!id) return alert('Введите Telegram ID');
+  const daysInput = document.getElementById('premiumDaysInput');
+  const days = idFromRow ? 30 : (parseInt(daysInput.value) || 30);
+  if (!confirm('Выдать Premium на ' + days + ' дней пользователю ' + id + '?')) return;
+  const r = await fetch('/admin/grant-premium', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ telegramId: parseInt(id), days })
+  });
+  if (r.ok) { alert('Premium выдан'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function manualRevokePremium(id) {
+  if (!confirm('Забрать Premium у ' + id + '?')) return;
+  const r = await fetch('/admin/revoke-premium', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ telegramId: id })
+  });
+  if (r.ok) { alert('Premium отозван'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function addAd() {
+  const type = document.getElementById('adType').value;
+  const mediaUrl = document.getElementById('adMediaUrl').value.trim();
+  const linkUrl = document.getElementById('adLinkUrl').value.trim();
+  const title = document.getElementById('adTitle').value.trim();
+  if (!mediaUrl) return alert('Введите URL картинки/видео');
+  const r = await fetch('/admin/ads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ type, mediaUrl, linkUrl, title })
+  });
+  if (r.ok) { alert('Реклама добавлена'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function toggleAd(id) {
+  const r = await fetch('/admin/ads/' + id + '/toggle', {
+    method: 'POST',
+    headers: { 'x-admin-secret': SECRET }
+  });
+  if (r.ok) location.reload();
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function deleteAd(id) {
+  if (!confirm('Удалить это объявление насовсем?')) return;
+  const r = await fetch('/admin/ads/' + id + '/delete', {
+    method: 'POST',
+    headers: { 'x-admin-secret': SECRET }
+  });
+  if (r.ok) location.reload();
   else alert('Ошибка: ' + await r.text());
 }
 
@@ -865,6 +1009,70 @@ app.post("/admin/ban", adminAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Ручная выдача премиума через админку
+app.post("/admin/grant-premium", adminAuth, async (req, res) => {
+  const { telegramId, days } = req.body;
+  if (!telegramId) return res.status(400).send("telegramId обязателен");
+  const d = Number.isFinite(Number(days)) && Number(days) > 0 ? Math.floor(Number(days)) : 30;
+  await grantPremium(telegramId, d);
+  // Уведомляем клиента если он сейчас онлайн
+  for (const [sockId, user] of telegramUserOf.entries()) {
+    if (user.id === telegramId) {
+      io.to(sockId).emit("premium-granted", { days: d });
+      break;
+    }
+  }
+  console.log("[admin] ручная выдача премиума:", telegramId, "| дней:", d);
+  res.json({ ok: true });
+});
+
+// Ручной отзыв премиума через админку
+app.post("/admin/revoke-premium", adminAuth, async (req, res) => {
+  const { telegramId } = req.body;
+  if (!telegramId) return res.status(400).send("telegramId обязателен");
+  await revokePremium(telegramId);
+  console.log("[admin] ручной отзыв премиума:", telegramId);
+  res.json({ ok: true });
+});
+
+// ---------- Реклама: управление из админки ----------
+app.post("/admin/ads", adminAuth, async (req, res) => {
+  if (!db) return res.status(503).send("БД недоступна");
+  const { type, mediaUrl, linkUrl, title } = req.body;
+  if (!mediaUrl) return res.status(400).send("mediaUrl обязателен");
+  if (!["image", "video"].includes(type)) return res.status(400).send("type должен быть image или video");
+  try {
+    await db.query(
+      "INSERT INTO ads (type, media_url, link_url, title) VALUES ($1,$2,$3,$4)",
+      [type, mediaUrl, linkUrl || null, title || null]
+    );
+    console.log("[admin] новая реклама добавлена:", type, mediaUrl);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).send("Ошибка: " + e.message);
+  }
+});
+
+app.post("/admin/ads/:id/toggle", adminAuth, async (req, res) => {
+  if (!db) return res.status(503).send("БД недоступна");
+  try {
+    await db.query("UPDATE ads SET active = NOT active WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).send("Ошибка: " + e.message);
+  }
+});
+
+app.post("/admin/ads/:id/delete", adminAuth, async (req, res) => {
+  if (!db) return res.status(503).send("БД недоступна");
+  try {
+    await db.query("DELETE FROM ads WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).send("Ошибка: " + e.message);
+  }
+});
+
 // Ручной разбан через админку
 app.post("/admin/unban", adminAuth, async (req, res) => {
   const { telegramId } = req.body;
@@ -921,6 +1129,33 @@ function getTurnCredentials(ttlSeconds = 86400) {
   const credential = crypto.createHmac("sha1", secret).update(username).digest("base64");
   return { username, credential };
 }
+
+// ---------- Реклама (управляется вручную из админки) ----------
+app.get("/custom-ads", async (req, res) => {
+  if (!db) return res.json([]);
+  try {
+    const r = await db.query(
+      "SELECT id, type, media_url, link_url, title FROM ads WHERE active = TRUE ORDER BY created_at DESC LIMIT 20"
+    );
+    res.json(r.rows);
+  } catch (e) {
+    console.error("[custom-ads] ошибка:", e.message);
+    res.json([]);
+  }
+});
+
+app.post("/ad-event", async (req, res) => {
+  if (!db) return res.json({ ok: true });
+  const { adId, type } = req.body;
+  if (!adId || !["impression", "click"].includes(type)) return res.status(400).json({ error: "bad request" });
+  try {
+    const col = type === "click" ? "clicks" : "impressions";
+    await db.query(`UPDATE ads SET ${col} = ${col} + 1 WHERE id = $1`, [adId]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.get("/ice-servers", async (req, res) => {
   const host = process.env.TURN_HOST;     // свой coturn на Aeza (когда будет готов)
@@ -1328,8 +1563,13 @@ io.on("connection", (socket) => {
     const reporterTgId = telegramUserOf.get(socket.id)?.id ?? null;
     const offenderTgId = telegramUserOf.get(partnerId)?.id ?? null;
 
+    // Скриншот сохраняем в БД в любом случае — для ручной проверки в админке,
+    // даже если автоматический анализ (Sightengine) недоступен или не настроен.
+    const imageForStorage = imageBase64 || null;
+
     if (!apiUser || !apiSecret) {
-      console.warn("[report] Sightengine не настроен — пропускаем");
+      console.warn("[report] Sightengine не настроен — сохраняем без автоанализа, нужна ручная проверка");
+      await saveReport({ reporterTgId, offenderTgId, verdict: "unreviewed", nudityScore: null, imageBase64: imageForStorage });
       return;
     }
 
@@ -1382,7 +1622,7 @@ io.on("connection", (socket) => {
         "| minor:", isMinorViolation,
         "| ban:", banReason);
 
-      await saveReport({ reporterTgId, offenderTgId, verdict, nudityScore });
+      await saveReport({ reporterTgId, offenderTgId, verdict, nudityScore, imageBase64: imageForStorage });
 
       if (isViolation) {
         const banMsg = isMinorViolation
@@ -1396,7 +1636,7 @@ io.on("connection", (socket) => {
       }
     } catch (e) {
       console.error("[report] ошибка:", e.message);
-      await saveReport({ reporterTgId, offenderTgId, verdict: "error", nudityScore: null });
+      await saveReport({ reporterTgId, offenderTgId, verdict: "error", nudityScore: null, imageBase64: imageForStorage });
     }
   });
 

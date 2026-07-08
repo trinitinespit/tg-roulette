@@ -239,6 +239,28 @@ html, body {
   z-index: 10;
   background: #111;
 }
+#localVideo.premium-border {
+  border: 2px solid #fbbf24;
+  box-shadow: 0 0 0 1px rgba(251,191,36,0.4), 0 0 12px rgba(251,191,36,0.5);
+}
+.local-premium-badge {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: 8px;
+  z-index: 11;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #1a1400;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 999px;
+  display: none;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  pointer-events: none;
+}
+.local-premium-badge.visible { display: inline-flex; }
 
 /* Статус поиска поверх чёрного */
 .search-overlay {
@@ -249,6 +271,63 @@ html, body {
   gap: 18px; z-index: 5;
 }
 .search-overlay[hidden] { display: none !important; }
+
+/* Обязательная реклама — картинка или видео на весь экран, с таймером и
+   прогресс-баром как на YouTube. Закрыть/пропустить нельзя, пока не истечёт время. */
+.ad-mandatory-overlay {
+  position: absolute; inset: 0;
+  z-index: 100001;
+  background: #000;
+  display: flex; align-items: center; justify-content: center;
+}
+.ad-mandatory-overlay[hidden] { display: none !important; }
+.ad-mandatory-media-wrap {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.ad-mandatory-media-wrap img,
+.ad-mandatory-media-wrap video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.ad-mandatory-badge {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: 14px;
+  background: rgba(0,0,0,0.65);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  z-index: 2;
+  backdrop-filter: blur(4px);
+}
+.ad-mandatory-link-btn {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 30px);
+  left: 16px; right: 16px;
+  background: rgba(26,111,212,0.92);
+  color: #fff;
+  border: none;
+  padding: 13px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  z-index: 2;
+}
+.ad-mandatory-progress {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 4px;
+  background: rgba(255,255,255,0.15);
+  z-index: 2;
+}
+.ad-mandatory-progress-bar {
+  height: 100%;
+  width: 100%;
+  background: var(--blue-lt);
+}
 
 .search-spinner {
   width: 52px; height: 52px;
@@ -588,12 +667,24 @@ html, body {
 
   <video id="remoteVideo" autoplay playsinline></video>
   <video id="localVideo" autoplay muted playsinline></video>
+  <div class="local-premium-badge" id="localPremiumBadge">⭐ PREMIUM</div>
 
   
   <!-- Поверх видео во время поиска -->
   <div class="search-overlay" id="searchOverlay">
     <div class="search-spinner"></div>
     <div class="search-label">Ищем собеседника…</div>
+  </div>
+
+  <!-- Обязательный просмотр рекламы (картинка или видео) с таймером как на YouTube -->
+  <div class="ad-mandatory-overlay" id="adMandatoryOverlay" hidden>
+    <div class="ad-mandatory-media-wrap">
+      <img id="adMandatoryImage" hidden />
+      <video id="adMandatoryVideo" autoplay muted playsinline hidden></video>
+    </div>
+    <div class="ad-mandatory-badge">Реклама · <span id="adMandatoryCountdown">10</span>с</div>
+    <button class="ad-mandatory-link-btn" id="adMandatoryLinkBtn" hidden>Перейти →</button>
+    <div class="ad-mandatory-progress"><div class="ad-mandatory-progress-bar" id="adMandatoryProgressBar"></div></div>
   </div>
 
   <!-- Живая лента сообщений (как в Instagram Live) -->
@@ -642,9 +733,6 @@ html, body {
 <div class="modal-backdrop" id="genderModal" hidden onclick="closeGenderModal(event)">
   <div class="modal-sheet">
     <div class="modal-title">Ваш пол</div>
-    <button class="modal-option" id="gOpt0" onclick="selectGender(null)">
-      <span class="emoji">🙂</span> Не указывать
-    </button>
     <button class="modal-option" id="gOpt1" onclick="selectGender('male')">
       <span class="emoji">👨</span> Мужской
     </button>
@@ -841,6 +929,7 @@ function openGenderModal() {
   document.getElementById("genderModal").hidden = false;
 }
 function closeGenderModal(e) {
+  if (!myGender) return; // нельзя закрыть, пока пол не выбран — он обязателен
   if (e.target === document.getElementById("genderModal")) {
     document.getElementById("genderModal").hidden = true;
   }
@@ -848,12 +937,12 @@ function closeGenderModal(e) {
 
 function applyGender(g) {
   myGender = g;
-  const labels = { null: ["🙂","Ваш пол"], male: ["👨","Мужской"], female: ["👩","Женский"] };
-  const [em, lb] = labels[g] || labels[null];
+  const labels = { male: ["👨","Мужской"], female: ["👩","Женский"] };
+  const [em, lb] = labels[g] || ["🙂","Ваш пол"];
   document.getElementById("genderEmoji").textContent = em;
   document.getElementById("genderLabel").textContent = lb;
-  ["gOpt0","gOpt1","gOpt2"].forEach(id => document.getElementById(id).classList.remove("selected"));
-  const map = { null:"gOpt0", male:"gOpt1", female:"gOpt2" };
+  ["gOpt1","gOpt2"].forEach(id => document.getElementById(id).classList.remove("selected"));
+  const map = { male:"gOpt1", female:"gOpt2" };
   document.getElementById(map[g])?.classList.add("selected");
 }
 
@@ -898,14 +987,109 @@ let room = null;
 let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
 let appState = "idle"; // idle | searching | matched
 
-// ─── Реклама (Adsgram) ──────────────────────────────────
+// ─── Реклама ────────────────────────────────────────────
 // blockId получить в личном кабинете https://partner.adsgram.ai после регистрации
 // приложения. Пока стоит заглушка — реклама просто не будет грузиться (SDK
 // уйдёт в catch), ничего не сломается.
 const ADSGRAM_BLOCK_ID = "int-37433";
 const SKIPS_PER_AD = 10;
+const AD_WATCH_SECONDS = 10; // обязательное время просмотра собственной рекламы
 let skipsSinceAd = 0;
 let adController = null;
+
+// Пока идёт обязательный просмотр рекламы во время поиска — если собеседник
+// найдётся раньше, чем закончится таймер, откладываем подключение и не
+// прерываем рекламу. См. doFind() и socket.on("matched").
+let adWatchActive = false;
+let pendingMatchData = null;
+
+// Собственная реклама, управляемая вручную из админки (картинки/видео + ссылки).
+// Имеет приоритет над Adsgram, если есть хотя бы одно активное объявление —
+// так вы полностью контролируете, что показывается пользователям.
+let customAds = [];
+fetch("/custom-ads").then(r => r.json()).then(list => {
+  if (Array.isArray(list)) customAds = list;
+}).catch(() => {});
+
+function pickCustomAd(type) {
+  const pool = customAds.filter(a => a.type === type);
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function trackAdEvent(adId, type) {
+  fetch("/ad-event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adId, type }),
+  }).catch(() => {});
+}
+
+// Показывает картинку или видео на весь экран с таймером (как на YouTube) —
+// закрыть/пропустить нельзя, пока не истекут `seconds`. Резолвится сама,
+// когда время вышло — вызывающий код ничего не закрывает руками.
+function showMandatoryAd(ad, seconds) {
+  return new Promise((resolve) => {
+    trackAdEvent(ad.id, "impression");
+
+    const overlay = document.getElementById("adMandatoryOverlay");
+    const imgEl = document.getElementById("adMandatoryImage");
+    const videoEl = document.getElementById("adMandatoryVideo");
+    const countdownEl = document.getElementById("adMandatoryCountdown");
+    const progressBar = document.getElementById("adMandatoryProgressBar");
+    const linkBtn = document.getElementById("adMandatoryLinkBtn");
+
+    imgEl.hidden = true;
+    videoEl.hidden = true;
+    videoEl.pause();
+
+    if (ad.type === "video") {
+      videoEl.src = ad.media_url;
+      videoEl.hidden = false;
+      videoEl.currentTime = 0;
+      videoEl.play().catch(() => {});
+    } else {
+      imgEl.src = ad.media_url;
+      imgEl.hidden = false;
+    }
+
+    if (ad.link_url) {
+      linkBtn.hidden = false;
+      linkBtn.onclick = () => {
+        trackAdEvent(ad.id, "click");
+        if (tg && typeof tg.openLink === "function") tg.openLink(ad.link_url);
+        else window.open(ad.link_url, "_blank");
+      };
+    } else {
+      linkBtn.hidden = true;
+    }
+
+    overlay.hidden = false;
+
+    let remaining = seconds;
+    countdownEl.textContent = remaining;
+
+    // Прогресс-бар едет слева направо (вернее, сжимается справа) синхронно с таймером
+    progressBar.style.transition = "none";
+    progressBar.style.width = "100%";
+    void progressBar.offsetWidth; // форсируем reflow, чтобы transition ниже применился заново
+    progressBar.style.transition = `width ${seconds}s linear`;
+    progressBar.style.width = "0%";
+
+    const interval = setInterval(() => {
+      remaining--;
+      countdownEl.textContent = Math.max(remaining, 0);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        overlay.hidden = true;
+        videoEl.pause();
+        videoEl.removeAttribute("src");
+        imgEl.removeAttribute("src");
+        resolve();
+      }
+    }, 1000);
+  });
+}
 
 function getAdController() {
   if (!adController && window.Adsgram) {
@@ -914,26 +1098,10 @@ function getAdController() {
   return adController;
 }
 
-// Вызывать после каждого skip/report. Показывает интерстишл раз в
-// SKIPS_PER_AD переключений, и только не-Premium пользователям.
-// Всегда резолвится (никогда не бросает) — вызывающий код await'ит перед тем
-// как продолжить поиск следующего собеседника.
-async function maybeShowAd() {
-  if (myPremium) return;
-  skipsSinceAd++;
-  if (skipsSinceAd < SKIPS_PER_AD) return;
-
-  const controller = getAdController();
-  if (!controller) return; // SDK ещё не подгрузился — не блокируем пользователя
-
-  skipsSinceAd = 0;
-  try {
-    await controller.show();
-  } catch (e) {
-    // пользователь закрыл рекламу раньше времени, либо нет заполнения —
-    // это нормально, просто продолжаем как обычно
-  }
-}
+// Реклама теперь показывается изнутри doFind() — единая точка, без риска
+// показать её дважды подряд (раньше был отдельный шаг перед поиском ещё и
+// свой внутри doFind, из-за чего на каждый 10-й пропуск реклама включалась
+// два раза подряд).
 
 const remoteVideo = document.getElementById("remoteVideo");
 const localVideo  = document.getElementById("localVideo");
@@ -1015,6 +1183,12 @@ window.onTelegramWidgetAuth = onTelegramWidgetAuth;
 
 // ─── Камера & старт ──────────────────────────────────────
 async function startCamera() {
+  if (!myGender) {
+    openGenderModal();
+    showError("Сначала укажите ваш пол");
+    return;
+  }
+
   const btn = document.getElementById("btnStart");
   btn.disabled = true;
   btn.textContent = "Включаем камеру…";
@@ -1037,7 +1211,50 @@ function doFind() {
   appState = "searching";
   searchOverlay.hidden = false;
   btnNext.disabled = true;
-  socket.emit("find");
+
+  // Реклама показывается раз в SKIPS_PER_AD переключений, не Premium-пользователям.
+  // Если реклама уже смотрится (doFind() вызван повторно, например из-за
+  // partner-left) — не запускаем вторую поверх первой и просто ищем дальше.
+  if (myPremium || adWatchActive) {
+    socket.emit("find");
+    return;
+  }
+
+  skipsSinceAd++;
+  if (skipsSinceAd < SKIPS_PER_AD) {
+    socket.emit("find");
+    return;
+  }
+  skipsSinceAd = 0;
+
+  // Приоритет — собственная реклама из админки. Показываем её поверх поиска:
+  // поиск стартует сразу и идёт параллельно, а если собеседник найдётся
+  // раньше, чем закончится таймер — подключение отложится до конца показа
+  // (см. pendingMatchData в socket.on("matched")), реклама не прерывается.
+  const customAd = pickCustomAd("video") || pickCustomAd("image");
+  if (customAd) {
+    adWatchActive = true;
+    socket.emit("find");
+    showMandatoryAd(customAd, AD_WATCH_SECONDS).then(() => {
+      adWatchActive = false;
+      if (pendingMatchData) {
+        const data = pendingMatchData;
+        pendingMatchData = null;
+        finalizeMatch(data);
+      }
+    });
+    return;
+  }
+
+  // Фоллбэк — Adsgram, если своя реклама не настроена. SDK сам управляет
+  // своим экраном, поэтому тут проще показать её ДО начала поиска
+  // (последовательно), а не совмещать с параллельным поиском.
+  const controller = getAdController();
+  if (!controller) {
+    socket.emit("find");
+    return;
+  }
+  controller.show().catch(() => {}).then(() => socket.emit("find"));
 }
 
 async function doNext() {
@@ -1046,11 +1263,19 @@ async function doNext() {
   room = null;
   clearChatMessages();
   socket.emit("skip");
-  await maybeShowAd();
   doFind();
 }
 
 function doBlock() {
+  const confirmMsg = "Заблокировать этого пользователя? Вы больше никогда не попадёте на него в поиске собеседника — это необратимо.";
+  if (tg && typeof tg.showConfirm === "function") {
+    tg.showConfirm(confirmMsg, (ok) => { if (ok) doBlockConfirmed(); });
+  } else {
+    if (confirm(confirmMsg)) doBlockConfirmed();
+  }
+}
+
+function doBlockConfirmed() {
   cleanupPeer();
   room = null;
   clearChatMessages();
@@ -1081,12 +1306,11 @@ async function doReportConfirmed() {
   room = null;
   clearChatMessages();
   socket.emit("skip");
-  await maybeShowAd();
   doFind();
 }
 
 // ─── Матч ───────────────────────────────────────────────
-socket.on("matched", data => {
+function finalizeMatch(data) {
   room = data.room;
   appState = "matched";
   searchOverlay.hidden = true;
@@ -1098,11 +1322,22 @@ socket.on("matched", data => {
     socket.emit("webrtc-debug", { event: "createPeer-throw", detail: e.message });
     showError("Не удалось начать звонок: " + e.message);
   }
+}
+
+socket.on("matched", data => {
+  // Пока не досмотрена обязательная реклама — не подключаем и не прерываем показ,
+  // просто запоминаем данные мэтча и подключимся сразу после окончания таймера.
+  if (adWatchActive) {
+    pendingMatchData = data;
+    return;
+  }
+  finalizeMatch(data);
 });
 
 socket.on("partner-left", () => {
   cleanupPeer();
   room = null;
+  pendingMatchData = null; // если реклама ещё смотрится — отменяем отложенное подключение
   doFind();
 });
 
@@ -1299,6 +1534,11 @@ function applyPremiumUI(premium) {
   }
   // Показываем/скрываем фильтр "Ищу" в модалке пола
   document.getElementById("genderWantSection").hidden = !premium;
+
+  // Плашка и золотая рамка у своего превью — видно самому пользователю,
+  // что у него активен Premium
+  document.getElementById("localPremiumBadge").classList.toggle("visible", premium);
+  document.getElementById("localVideo").classList.toggle("premium-border", premium);
 }
 
 socket.on("user-status", ({ premium, gender }) => {
