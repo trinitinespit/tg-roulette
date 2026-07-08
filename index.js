@@ -456,6 +456,7 @@ app.post("/tg-webhook", async (req, res) => {
     const userId = message.from.id;
     const firstName = message.from.first_name || "друг";
     const langCode = (message.from.language_code || "ru").split("-")[0];
+    console.log("[start] user", userId, "| raw language_code от Telegram:", message.from.language_code || "(пусто)", "| используем:", langCode);
 
     const GREETINGS = {
       ru: {
