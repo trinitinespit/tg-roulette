@@ -15,6 +15,15 @@ console.log("[env] SIGHTENGINE_API_USER:", process.env.SIGHTENGINE_API_USER ? "S
 console.log("[env] SIGHTENGINE_API_SECRET:", process.env.SIGHTENGINE_API_SECRET ? "SET" : "NOT SET");
 
 const app = express();
+
+// ---------- Self-service реклама: цены и настройки ----------
+// ВАЖНО: цены — плейсхолдеры, поменяйте под свою модель монетизации.
+// Срок размещения после одобрения — 7 дней, дальше объявление гаснет само (см. expireOldAds()).
+const AD_SLOT_DAYS = 7;
+const AD_SLOT_PRICE_STARS = 5000; // ⭐ за AD_SLOT_DAYS дней размещения
+const AD_SLOT_PRICE_TON = 3;      // TON за AD_SLOT_DAYS дней размещения
+const TON_WALLET_ADDRESS = process.env.TON_WALLET_ADDRESS || ""; // ваш адрес для приёма оплаты
+const ADMIN_TG_ID = process.env.ADMIN_TG_ID || ""; // куда слать уведомления о новых заявках на рекламу
 const server = http.createServer(app);
 const io = new Server(server);
 
@@ -103,6 +112,13 @@ async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reminders_blocked BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE bans ADD COLUMN IF NOT EXISTS evidence_image TEXT;
+    ALTER TABLE ads ADD COLUMN IF NOT EXISTS advertiser_tg_id BIGINT;
+    ALTER TABLE ads ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved'; -- pending_payment | pending_review | approved | rejected
+    ALTER TABLE ads ADD COLUMN IF NOT EXISTS payment_method TEXT; -- stars | ton | null (добавлено вручную из админки)
+    ALTER TABLE ads ADD COLUMN IF NOT EXISTS payment_amount NUMERIC;
+    ALTER TABLE ads ADD COLUMN IF NOT EXISTS ton_comment TEXT;   -- уникальный комментарий для сверки TON-платежа
+    ALTER TABLE ads ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    ALTER TABLE ads ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
   `).catch(e => console.warn("[db] миграция users:", e.message));
 
   // Индекс ускоряет проверку бана при каждом подключении
@@ -200,6 +216,32 @@ async function revokePremium(telegramId) {
     [telegramId]
   );
   console.log("[premium] отозван у пользователя", telegramId);
+}
+
+// Уведомляет админа в личку боту о новой оплаченной заявке на рекламу,
+// ждущей ручного одобрения. Требует ADMIN_TG_ID в переменных окружения —
+// без него просто логирует и ничего не отправляет (не критично для работы).
+async function notifyAdminNewAdRequest(ad) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken || !ADMIN_TG_ID) {
+    console.warn("[ads] ADMIN_TG_ID не задан — уведомление о заявке #" + ad.id + " не отправлено");
+    return;
+  }
+  const paymentInfo = ad.payment_method === "ton"
+    ? `TON, комментарий для сверки: ${ad.ton_comment}`
+    : `Stars (${ad.payment_amount})`;
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: ADMIN_TG_ID,
+        text: `📢 Новая заявка на рекламу #${ad.id}\n\nТип: ${ad.type}\nОплата: ${paymentInfo}\nСсылка при клике: ${ad.link_url || "—"}\n\nПроверьте и одобрите в /admin → вкладка «Реклама»`,
+      }),
+    });
+  } catch (e) {
+    console.error("[ads] не удалось уведомить админа:", e.message);
+  }
 }
 
 async function setGender(telegramId, gender) {
@@ -590,6 +632,33 @@ app.post("/tg-webhook", async (req, res) => {
       return;
     }
 
+    if (product === "ad_slot") {
+      const adId = payload.split(":")[1];
+      console.log("[ad_slot] оплата получена, заявка #", adId, "| Stars:", payment.total_amount);
+
+      if (db) {
+        try {
+          const r = await db.query(
+            "UPDATE ads SET status = 'pending_review' WHERE id = $1 RETURNING *",
+            [adId]
+          );
+          if (r.rowCount) await notifyAdminNewAdRequest(r.rows[0]);
+        } catch (e) {
+          console.error("[ad_slot] ошибка обновления заявки:", e.message);
+        }
+      }
+
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: telegramId,
+          text: "✅ Оплата получена! Заявка на размещение рекламы отправлена на модерацию — как только одобрим, она появится в приложении.",
+        }),
+      });
+      return;
+    }
+
     const days = product === "premium_90" ? 90 : 30;
 
     await grantPremium(telegramId, days);
@@ -837,6 +906,31 @@ app.get("/admin", adminAuth, async (req, res) => {
 
   <!-- Реклама -->
   <div class="section" id="tab-ads">
+    ${(() => {
+      const pending = ads.rows.filter(a => a.status === 'pending_review');
+      if (!pending.length) return '';
+      return `
+      <h3 style="margin-bottom:10px;color:#fbbf24;">⏳ Заявки на модерации (${pending.length})</h3>
+      <table style="margin-bottom:24px;">
+        <tr><th>Превью</th><th>Тип</th><th>Ссылка</th><th>Рекламодатель</th><th>Оплата</th><th>Действие</th></tr>
+        ${pending.map(a => `
+        <tr>
+          <td>${a.type === 'image'
+            ? `<img src="${a.media_url}" style="width:70px;height:45px;object-fit:cover;border-radius:6px;cursor:pointer;" onclick="openLightbox(this.src)"/>`
+            : `<video src="${a.media_url}" style="width:70px;height:45px;object-fit:cover;border-radius:6px;" muted controls></video>`}</td>
+          <td>${a.type === 'image' ? '🖼️' : '🎬'}</td>
+          <td style="max-width:200px;word-break:break-word;font-size:11px;color:#64748b">${a.link_url || '—'}</td>
+          <td>${a.advertiser_tg_id || '—'}</td>
+          <td>${a.payment_method === 'ton' ? `TON<br><span style="font-size:10px;color:#64748b">${a.ton_comment || ''}</span>` : `⭐ ${a.payment_amount || ''}`}</td>
+          <td>
+            <button class="unban-btn" onclick="approveAd(${a.id})">Одобрить</button>
+            <button class="ban-btn" onclick="rejectAd(${a.id})">Отклонить</button>
+          </td>
+        </tr>`).join('')}
+      </table>`;
+    })()}
+
+    <h3 style="margin-bottom:10px;">Добавить рекламу вручную</h3>
     <div class="action-row" style="flex-wrap:wrap;">
       <select id="adType" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:8px;">
         <option value="image">Картинка (интерстишл между звонками)</option>
@@ -850,19 +944,22 @@ app.get("/admin", adminAuth, async (req, res) => {
     ${ads.rowCount === 0 ? '<div class="empty">Реклама не добавлена</div>' : `
     <table>
       <tr><th>Превью</th><th>Тип</th><th>Название</th><th>Ссылка</th><th>Показы</th><th>Клики</th><th>Статус</th><th>Действие</th></tr>
-      ${ads.rows.map(a => `
+      ${ads.rows.filter(a => a.status !== 'pending_review').map(a => `
       <tr>
         <td>${a.type === 'image'
-          ? `<img src="${a.media_url}" style="width:70px;height:45px;object-fit:cover;border-radius:6px;"/>`
+          ? `<img src="${a.media_url}" style="width:70px;height:45px;object-fit:cover;border-radius:6px;cursor:pointer;" onclick="openLightbox(this.src)"/>`
           : `<video src="${a.media_url}" style="width:70px;height:45px;object-fit:cover;border-radius:6px;" muted></video>`}</td>
         <td>${a.type === 'image' ? '🖼️ Картинка' : '🎬 Видео'}</td>
         <td>${a.title || '—'}</td>
         <td style="max-width:200px;word-break:break-word;font-size:11px;color:#64748b">${a.link_url || '—'}</td>
         <td>${a.impressions}</td>
         <td>${a.clicks}</td>
-        <td>${a.active ? '<span style="color:#4ade80">Активна</span>' : '<span style="color:#64748b">Выключена</span>'}</td>
+        <td>${a.active && a.status === 'approved' ? '<span style="color:#4ade80">Активна</span>'
+              : a.status === 'rejected' ? '<span style="color:#f87171">Отклонена</span>'
+              : a.status === 'pending_payment' ? '<span style="color:#64748b">Ждёт оплаты</span>'
+              : '<span style="color:#64748b">Выключена</span>'}</td>
         <td>
-          <button class="btn" onclick="toggleAd(${a.id})">${a.active ? 'Выключить' : 'Включить'}</button>
+          ${a.status === 'approved' ? `<button class="btn" onclick="toggleAd(${a.id})">${a.active ? 'Выключить' : 'Включить'}</button>` : ''}
           <button class="ban-btn" onclick="deleteAd(${a.id})">Удалить</button>
         </td>
       </tr>`).join('')}
@@ -965,6 +1062,27 @@ async function toggleAd(id) {
     headers: { 'x-admin-secret': SECRET }
   });
   if (r.ok) location.reload();
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function approveAd(id) {
+  if (!confirm('Одобрить и запустить эту рекламу?')) return;
+  const r = await fetch('/admin/ads/' + id + '/approve', {
+    method: 'POST',
+    headers: { 'x-admin-secret': SECRET }
+  });
+  if (r.ok) { alert('Реклама одобрена и запущена'); location.reload(); }
+  else alert('Ошибка: ' + await r.text());
+}
+
+async function rejectAd(id) {
+  const reason = prompt('Причина отклонения (необязательно):') || '';
+  const r = await fetch('/admin/ads/' + id + '/reject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ reason })
+  });
+  if (r.ok) { alert('Заявка отклонена'); location.reload(); }
   else alert('Ошибка: ' + await r.text());
 }
 
@@ -1101,6 +1219,66 @@ app.post("/admin/ads/:id/delete", adminAuth, async (req, res) => {
   }
 });
 
+// Одобрить заявку на рекламу — активирует её на AD_SLOT_DAYS дней с этого момента
+app.post("/admin/ads/:id/approve", adminAuth, async (req, res) => {
+  if (!db) return res.status(503).send("БД недоступна");
+  try {
+    const r = await db.query(
+      `UPDATE ads SET status = 'approved', active = TRUE,
+              expires_at = NOW() + INTERVAL '${AD_SLOT_DAYS} days'
+       WHERE id = $1 RETURNING advertiser_tg_id`,
+      [req.params.id]
+    );
+    console.log("[admin] реклама #" + req.params.id + " одобрена");
+
+    // Уведомляем рекламодателя, если это была self-service заявка
+    const advertiserTgId = r.rows[0]?.advertiser_tg_id;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (advertiserTgId && botToken) {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: advertiserTgId,
+          text: `✅ Ваша реклама одобрена и запущена на ${AD_SLOT_DAYS} дней!`,
+        }),
+      }).catch(() => {});
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).send("Ошибка: " + e.message);
+  }
+});
+
+// Отклонить заявку на рекламу
+app.post("/admin/ads/:id/reject", adminAuth, async (req, res) => {
+  if (!db) return res.status(503).send("БД недоступна");
+  const { reason } = req.body;
+  try {
+    const r = await db.query(
+      "UPDATE ads SET status = 'rejected', rejection_reason = $2 WHERE id = $1 RETURNING advertiser_tg_id",
+      [req.params.id, reason || null]
+    );
+    console.log("[admin] реклама #" + req.params.id + " отклонена");
+
+    const advertiserTgId = r.rows[0]?.advertiser_tg_id;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (advertiserTgId && botToken) {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: advertiserTgId,
+          text: `❌ Ваша заявка на рекламу отклонена.${reason ? "\n\nПричина: " + reason : ""}`,
+        }),
+      }).catch(() => {});
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).send("Ошибка: " + e.message);
+  }
+});
+
 // Ручной разбан через админку
 app.post("/admin/unban", adminAuth, async (req, res) => {
   const { telegramId } = req.body;
@@ -1163,7 +1341,10 @@ app.get("/custom-ads", async (req, res) => {
   if (!db) return res.json([]);
   try {
     const r = await db.query(
-      "SELECT id, type, media_url, link_url, title FROM ads WHERE active = TRUE ORDER BY created_at DESC LIMIT 20"
+      `SELECT id, type, media_url, link_url, title FROM ads
+       WHERE active = TRUE AND status = 'approved'
+         AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY created_at DESC LIMIT 20`
     );
     res.json(r.rows);
   } catch (e) {
@@ -1179,6 +1360,100 @@ app.post("/ad-event", async (req, res) => {
   try {
     const col = type === "click" ? "clicks" : "impressions";
     await db.query(`UPDATE ads SET ${col} = ${col} + 1 WHERE id = $1`, [adId]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- Self-service заявка на размещение рекламы ----------
+// Рекламодатель отправляет заявку прямо из Mini App (экран «Разместить рекламу»),
+// выбирает Stars или TON, платит, и заявка уходит на ручную модерацию (см. /admin).
+app.post("/submit-ad", async (req, res) => {
+  if (!db) return res.status(503).json({ error: "БД недоступна" });
+  const { telegramId, type, mediaUrl, linkUrl, title, paymentMethod } = req.body;
+
+  if (!telegramId) return res.status(400).json({ error: "telegramId обязателен" });
+  if (!mediaUrl) return res.status(400).json({ error: "Укажите ссылку на картинку/видео" });
+  if (!["image", "video"].includes(type)) return res.status(400).json({ error: "Неверный тип" });
+  if (!["stars", "ton"].includes(paymentMethod)) return res.status(400).json({ error: "Выберите способ оплаты" });
+
+  try {
+    if (paymentMethod === "stars") {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken) return res.status(500).json({ error: "BOT_TOKEN не задан" });
+
+      const insert = await db.query(
+        `INSERT INTO ads (type, media_url, link_url, title, active, status, advertiser_tg_id, payment_method, payment_amount)
+         VALUES ($1,$2,$3,$4,FALSE,'pending_payment',$5,'stars',$6) RETURNING id`,
+        [type, mediaUrl, linkUrl || null, title || null, telegramId, AD_SLOT_PRICE_STARS]
+      );
+      const adId = insert.rows[0].id;
+
+      const r = await fetch(`https://api.telegram.org/bot${botToken}/sendInvoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: telegramId,
+          title: "Размещение рекламы в Spinny",
+          description: `Реклама на ${AD_SLOT_DAYS} дней после одобрения модератором`,
+          payload: `ad_slot:${adId}`,
+          provider_token: "",
+          currency: "XTR",
+          prices: [{ label: "Реклама в Spinny", amount: AD_SLOT_PRICE_STARS }],
+        }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.description);
+
+      console.log("[submit-ad] заявка #", adId, "| Stars-инвойс отправлен", telegramId);
+      res.json({ ok: true, method: "stars" });
+    } else {
+      // TON — своя оплата вне Bot API, генерируем уникальный комментарий для сверки
+      if (!TON_WALLET_ADDRESS) return res.status(503).json({ error: "TON-оплата пока не настроена" });
+
+      const tonComment = `AD${Date.now().toString(36).toUpperCase()}`;
+      const insert = await db.query(
+        `INSERT INTO ads (type, media_url, link_url, title, active, status, advertiser_tg_id, payment_method, payment_amount, ton_comment)
+         VALUES ($1,$2,$3,$4,FALSE,'pending_payment',$5,'ton',$6,$7) RETURNING id`,
+        [type, mediaUrl, linkUrl || null, title || null, telegramId, AD_SLOT_PRICE_TON, tonComment]
+      );
+      const adId = insert.rows[0].id;
+
+      console.log("[submit-ad] заявка #", adId, "| ожидает TON-оплаты, комментарий:", tonComment);
+      res.json({
+        ok: true,
+        method: "ton",
+        adId,
+        tonAddress: TON_WALLET_ADDRESS,
+        tonAmount: AD_SLOT_PRICE_TON,
+        tonComment,
+        tonDeepLink: `ton://transfer/${TON_WALLET_ADDRESS}?amount=${Math.round(AD_SLOT_PRICE_TON * 1e9)}&text=${encodeURIComponent(tonComment)}`,
+      });
+    }
+  } catch (e) {
+    console.error("[submit-ad] ошибка:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Рекламодатель нажал «Я оплатил» после перевода TON — уходит на ручную сверку.
+app.post("/confirm-ton-payment", async (req, res) => {
+  if (!db) return res.status(503).json({ error: "БД недоступна" });
+  const { adId } = req.body;
+  if (!adId) return res.status(400).json({ error: "adId обязателен" });
+
+  try {
+    const r = await db.query(
+      "UPDATE ads SET status = 'pending_review' WHERE id = $1 AND payment_method = 'ton' RETURNING *",
+      [adId]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: "Заявка не найдена" });
+
+    const ad = r.rows[0];
+    console.log("[confirm-ton-payment] заявка #", adId, "заявлена как оплаченная, комментарий:", ad.ton_comment, "— нужна ручная сверка в TON-эксплорере");
+
+    await notifyAdminNewAdRequest(ad);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1818,6 +2093,23 @@ const REMINDER_INTERVAL_MS = 60 * 60 * 1000;
 setInterval(() => {
   sendReminders().catch((e) => console.error("[reminders] необработанная ошибка:", e.message));
 }, REMINDER_INTERVAL_MS);
+
+// Автоматически гасим рекламу, у которой истёк оплаченный срок размещения (AD_SLOT_DAYS)
+async function expireOldAds() {
+  if (!db) return;
+  try {
+    const r = await db.query(
+      "UPDATE ads SET active = FALSE WHERE active = TRUE AND expires_at IS NOT NULL AND expires_at < NOW() RETURNING id"
+    );
+    if (r.rowCount) console.log("[ads] истёк срок размещения, отключено:", r.rows.map(x => x.id).join(", "));
+  } catch (e) {
+    console.error("[ads] ошибка проверки истёкшей рекламы:", e.message);
+  }
+}
+const AD_EXPIRY_CHECK_MS = 60 * 60 * 1000; // раз в час
+setInterval(() => {
+  expireOldAds().catch((e) => console.error("[ads] необработанная ошибка:", e.message));
+}, AD_EXPIRY_CHECK_MS);
 
 // ---------- Старт ----------
 // Сервер стартует НЕМЕДЛЕННО — Amvera/Render требуют чтобы порт слушался быстро.

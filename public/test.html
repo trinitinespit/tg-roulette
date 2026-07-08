@@ -654,6 +654,10 @@ html, body {
       ❤️ Поддержать проект
     </button>
 
+    <button class="btn-premium" id="btnAdvertise" style="margin-top:8px;background:rgba(255,255,255,0.06);font-size:13px;" onclick="openAdvertiseModal()">
+      📢 Разместить рекламу
+    </button>
+
     <p class="disclaimer">
       Используя видеочат, вы соглашаетесь с <span id="rulesLink" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span>.<br>
       Нарушители будут заблокированы.
@@ -835,6 +839,59 @@ html, body {
     <p style="font-size:11px;color:#9AB2CC;text-align:center;margin-top:10px;">
       После нажатия инвойс придёт в чат с ботом
     </p>
+  </div>
+</div>
+
+<!-- Попап размещения рекламы -->
+<div class="modal-backdrop" id="advertiseModal" hidden onclick="closeAdvertiseModal(event)">
+  <div class="modal-sheet" id="advertiseFormSheet">
+    <div class="modal-title">📢 Разместить рекламу</div>
+    <div style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
+      Ваша реклама покажется в приложении на 7 дней после проверки модератором
+    </div>
+
+    <select id="adFormType" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;">
+      <option value="image" style="color:#000;">🖼️ Картинка (между звонками)</option>
+      <option value="video" style="color:#000;">🎬 Видео (во время поиска)</option>
+    </select>
+    <input type="text" id="adFormMediaUrl" placeholder="Ссылка на картинку/видео" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;"/>
+    <input type="text" id="adFormLinkUrl" placeholder="Ссылка при клике (t.me/... или https://...)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;"/>
+    <input type="text" id="adFormTitle" placeholder="Название (для себя, необязательно)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:14px;"/>
+
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="modal-option" id="adPayStarsBtn" style="flex:1;justify-content:center;" onclick="selectAdPayment('stars')">⭐ Stars</button>
+      <button class="modal-option" id="adPayTonBtn" style="flex:1;justify-content:center;" onclick="selectAdPayment('ton')">💎 TON</button>
+    </div>
+
+    <button class="btn-premium" id="adSubmitBtn" onclick="submitAd()" style="width:100%;">
+      Оформить заявку
+    </button>
+  </div>
+
+  <!-- Экран оплаты TON — показывается после успешной подачи заявки с оплатой TON -->
+  <div class="modal-sheet" id="advertiseTonSheet" hidden>
+    <div class="modal-title">💎 Оплата TON</div>
+    <div style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
+      Переведите точную сумму на адрес ниже, обязательно указав комментарий — по нему заявка сверяется с платежом.
+    </div>
+    <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;">
+      <div style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Адрес</div>
+      <div id="adTonAddress" style="word-break:break-all;font-family:monospace;"></div>
+    </div>
+    <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;">
+      <div style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Сумма</div>
+      <div id="adTonAmount" style="font-family:monospace;"></div>
+    </div>
+    <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:14px;font-size:13px;">
+      <div style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Комментарий (обязательно!)</div>
+      <div id="adTonComment" style="word-break:break-all;font-family:monospace;font-weight:700;"></div>
+    </div>
+    <a id="adTonDeepLink" href="#" style="text-decoration:none;">
+      <button class="btn-premium" style="width:100%;margin-bottom:8px;">Открыть кошелёк</button>
+    </a>
+    <button id="adTonConfirmBtn" onclick="confirmTonPayment()" style="width:100%;padding:13px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:15px;font-weight:700;">
+      ✅ Я оплатил
+    </button>
   </div>
 </div>
 
@@ -1363,6 +1420,17 @@ socket.on("banned", data => {
   document.getElementById("btnStart").disabled = true;
   document.getElementById("btnStart").textContent = "Аккаунт заблокирован";
 
+  // Скриншот момента, за который выдан бан — как в OmeTV
+  const existingImg = document.getElementById("banEvidenceImg");
+  if (existingImg) existingImg.remove();
+  if (data?.evidenceImage) {
+    const img = document.createElement("img");
+    img.id = "banEvidenceImg";
+    img.src = data.evidenceImage;
+    img.style.cssText = "width:100%;max-width:320px;margin:12px auto 0;display:block;border-radius:14px;border:2px solid rgba(248,113,113,0.5);";
+    document.getElementById("btnStart").before(img);
+  }
+
   // Показываем кнопку разблокировки
   const existing = document.getElementById("unbanBtn");
   if (existing) existing.remove();
@@ -1421,12 +1489,14 @@ function createPeer(initiator) {
     socket.emit("webrtc-debug", { event: "ontrack", detail: `streams=${e.streams.length}` });
   };
 
+  const candidateTypes = [];
   pc.onicecandidate = e => {
     if (e.candidate) {
       socket.emit("signal", { room, data: { candidate: e.candidate } });
-      socket.emit("webrtc-debug", { event: "onicecandidate", detail: e.candidate.type || e.candidate.candidate?.split(" ")[7] || "?" });
+      candidateTypes.push(e.candidate.type || e.candidate.candidate?.split(" ")[7] || "?");
     } else {
-      socket.emit("webrtc-debug", { event: "onicecandidate", detail: "gathering-complete (null candidate)" });
+      // null-кандидат = сбор закончен — шлём одну сводку вместо лога на каждый кандидат
+      socket.emit("webrtc-debug", { event: "ice-gathering-done", detail: candidateTypes.join(",") || "none" });
     }
   };
 
@@ -1527,6 +1597,95 @@ async function submitDonate() {
   } finally {
     btn.disabled = false;
     btn.textContent = "❤️ Задонатить";
+  }
+}
+
+// ─── Размещение рекламы (self-service) ──────────────────
+let adSelectedPayment = null;
+let pendingAdId = null;
+
+function openAdvertiseModal() {
+  document.getElementById("advertiseFormSheet").hidden = false;
+  document.getElementById("advertiseTonSheet").hidden = true;
+  document.getElementById("advertiseModal").hidden = false;
+}
+function closeAdvertiseModal(e) {
+  if (!e || e.target === document.getElementById("advertiseModal")) {
+    document.getElementById("advertiseModal").hidden = true;
+  }
+}
+function selectAdPayment(method) {
+  adSelectedPayment = method;
+  document.getElementById("adPayStarsBtn").classList.toggle("selected", method === "stars");
+  document.getElementById("adPayTonBtn").classList.toggle("selected", method === "ton");
+}
+
+async function submitAd() {
+  const type = document.getElementById("adFormType").value;
+  const mediaUrl = document.getElementById("adFormMediaUrl").value.trim();
+  const linkUrl = document.getElementById("adFormLinkUrl").value.trim();
+  const title = document.getElementById("adFormTitle").value.trim();
+
+  if (!mediaUrl) return showError("Укажите ссылку на картинку/видео");
+  if (!adSelectedPayment) return showError("Выберите способ оплаты");
+
+  const btn = document.getElementById("adSubmitBtn");
+  btn.disabled = true;
+  btn.textContent = "Отправляем...";
+
+  try {
+    const r = await fetch("/submit-ad", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        telegramId: myTelegramId, type, mediaUrl, linkUrl, title,
+        paymentMethod: adSelectedPayment,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "Неизвестная ошибка");
+
+    if (data.method === "stars") {
+      showError("📨 Инвойс отправлен в чат с ботом — оплатите там");
+      closeAdvertiseModal();
+    } else {
+      // TON — показываем реквизиты для перевода
+      pendingAdId = data.adId;
+      document.getElementById("adTonAddress").textContent = data.tonAddress;
+      document.getElementById("adTonAmount").textContent = data.tonAmount + " TON";
+      document.getElementById("adTonComment").textContent = data.tonComment;
+      document.getElementById("adTonDeepLink").href = data.tonDeepLink;
+      document.getElementById("advertiseFormSheet").hidden = true;
+      document.getElementById("advertiseTonSheet").hidden = false;
+    }
+  } catch (e) {
+    showError("Ошибка: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Оформить заявку";
+  }
+}
+
+async function confirmTonPayment() {
+  if (!pendingAdId) return;
+  const btn = document.getElementById("adTonConfirmBtn");
+  btn.disabled = true;
+  btn.textContent = "Отправляем...";
+  try {
+    const r = await fetch("/confirm-ton-payment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adId: pendingAdId }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "Неизвестная ошибка");
+    showError("✅ Спасибо! Заявка отправлена на проверку — вам напишут после сверки платежа");
+    closeAdvertiseModal();
+  } catch (e) {
+    showError("Ошибка: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "✅ Я оплатил";
   }
 }
 
