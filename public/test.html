@@ -363,14 +363,30 @@ html, body {
   background: var(--blue-lt);
 }
 
-.search-spinner {
-  width: 52px; height: 52px;
-  border: 3px solid rgba(255,255,255,0.12);
-  border-top-color: var(--blue-lt);
-  border-radius: 50%;
-  animation: spin 0.9s linear infinite;
+.search-dice-row { display: flex; gap: 14px; }
+.search-dice {
+  font-size: 40px;
+  display: inline-block;
+  animation: diceTumble 1.1s ease-in-out infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes diceTumble {
+  0%   { transform: rotate(0deg) translateY(0); }
+  25%  { transform: rotate(90deg) translateY(-10px); }
+  50%  { transform: rotate(180deg) translateY(0); }
+  75%  { transform: rotate(270deg) translateY(-10px); }
+  100% { transform: rotate(360deg) translateY(0); }
+}
+
+.search-stop-btn {
+  margin-top: 10px;
+  background: rgba(255,59,48,0.14);
+  border: 1px solid rgba(255,59,48,0.4);
+  color: #FF6B60;
+  font-size: 14px; font-weight: 700;
+  padding: 10px 22px;
+  border-radius: 999px;
+  display: flex; align-items: center; gap: 6px;
+}
 
 .search-label {
   font-size: 15px; color: var(--text-dim); font-weight: 500;
@@ -581,8 +597,24 @@ html, body {
 }
 .error-toast.show { display: block; }
 
+/* На широких экранах (десктопный браузер на spinnyapp.ru) — не растягиваем
+   на всю ширину, а показываем в узкой колонке как на телефоне в приложении */
+@media (min-width: 560px) {
+  html, body { background: #05070d; }
+  .screen {
+    inset: auto;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 420px;
+    margin-left: -210px;
+    box-shadow: 0 0 80px rgba(0,0,0,0.7);
+    border-left: 1px solid rgba(255,255,255,0.08);
+    border-right: 1px solid rgba(255,255,255,0.08);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .online-dot, .search-spinner, .flying-emoji { animation: none; }
+  .online-dot, .search-dice, .flying-emoji { animation: none; }
 }
 </style>
 </head>
@@ -715,8 +747,13 @@ html, body {
   
   <!-- Поверх видео во время поиска -->
   <div class="search-overlay" id="searchOverlay">
-    <div class="search-spinner"></div>
+    <div class="search-dice-row">
+      <span class="search-dice" style="animation-delay:0s;">🎲</span>
+      <span class="search-dice" style="animation-delay:0.15s;">🎲</span>
+      <span class="search-dice" style="animation-delay:0.3s;">🎲</span>
+    </div>
     <div class="search-label">Ищем собеседника…</div>
+    <button class="search-stop-btn" onclick="stopSearchAndGoHome()">⏹ <span id="searchStopText">Стоп</span></button>
   </div>
 
   <!-- Обязательный просмотр рекламы (картинка или видео) с таймером как на YouTube -->
@@ -899,7 +936,10 @@ html, body {
 
 <!-- Попап размещения рекламы -->
 <div class="modal-backdrop" id="advertiseModal" hidden onclick="closeAdvertiseModal(event)">
-  <div class="modal-sheet" id="advertiseFormSheet">
+  <div class="modal-sheet" id="advertiseFormSheet" style="max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:-8px;">
+      <button onclick="closeAdvertiseModal()" style="background:rgba(255,255,255,0.08);border:none;color:#fff;width:28px;height:28px;border-radius:50%;font-size:15px;cursor:pointer;">✕</button>
+    </div>
     <div class="modal-title">📢 Разместить рекламу</div>
     <div id="advertiseDescText" style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
       Реклама показывается до исчерпания оплаченного пакета показов, после проверки модератором
@@ -1166,6 +1206,8 @@ function renderAdSpecs() {
   if (prohibEl) prohibEl.innerHTML = `<b style="color:#f87171;">${t.prohib_label}</b>${t.prohib_body}`;
 }
 
+const STOP_BUTTON_TEXT = { ru:"Стоп", en:"Stop", es:"Detener", tr:"Durdur", it:"Ferma", zh:"停止", ar:"إيقاف", hi:"रोकें", ja:"停止", fr:"Arrêter", de:"Stopp" };
+
 function renderRules() {
   const body = document.getElementById("rulesModalBody");
   if (!body) return;
@@ -1304,6 +1346,8 @@ function applyLanguage(lang) {
   renderRules();
   renderPrivacy();
   renderAdSpecs();
+  const searchStopText = document.getElementById("searchStopText");
+  if (searchStopText) searchStopText.textContent = STOP_BUTTON_TEXT[currentLang] || STOP_BUTTON_TEXT.en;
 
   // Названия опций в модалке страны (сами значения countryMap фиксированы,
   // myCountry тут не участвует — трогать её тут небезопасно, см. selectLanguage)
@@ -1689,6 +1733,29 @@ async function startCamera() {
 }
 
 // ─── Поиск ──────────────────────────────────────────────
+// Прерывает поиск собеседника и возвращает на главный экран — раньше такой
+// возможности не было вообще, только полное закрытие приложения.
+function stopSearchAndGoHome() {
+  socket.emit("leave");
+  cleanupPeer();
+  room = null;
+  appState = "idle";
+  searchOverlay.hidden = true;
+  document.getElementById("adMandatoryOverlay").hidden = true;
+  adWatchActive = false;
+  pendingMatchData = null;
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  showScreen("screenHome");
+  tg?.disableClosingConfirmation();
+  const startBtn = document.getElementById("btnStart");
+  if (startBtn) startBtn.disabled = false;
+}
+
 function doFind() {
   appState = "searching";
   searchOverlay.hidden = false;
