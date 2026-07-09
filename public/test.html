@@ -589,6 +589,45 @@ html, body {
   padding: 20px 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
 }
 
+/* Демо-превью в форме размещения рекламы — показывает рекламодателю,
+   как выглядит их объявление для конечного пользователя */
+.ad-demo-phone {
+  position: relative;
+  width: 130px; height: 230px;
+  margin: 0 auto 10px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(160deg, #1a2540, #0d1526);
+  border: 2px solid rgba(255,255,255,0.15);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.4);
+}
+.ad-demo-person {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 56px;
+  animation: adDemoPersonCycle 4s ease-in-out infinite;
+}
+.ad-demo-adlayer {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #3B8FE8, #1a6fd4);
+  opacity: 0;
+  animation: adDemoAdCycle 4s ease-in-out infinite;
+}
+.ad-demo-badge {
+  color: #fff; font-weight: 800; font-size: 12px; text-align: center;
+  line-height: 1.4; letter-spacing: 0.3px;
+}
+@keyframes adDemoPersonCycle {
+  0%, 52%  { opacity: 1; transform: translateX(0); }
+  62%, 100% { opacity: 0; transform: translateX(-26px); }
+}
+@keyframes adDemoAdCycle {
+  0%, 52%  { opacity: 0; transform: translateX(26px); }
+  62%, 92% { opacity: 1; transform: translateX(0); }
+  100%     { opacity: 0; transform: translateX(26px); }
+}
+
 .modal-title {
   font-size: 13px; color: var(--text-dim);
   text-transform: uppercase; letter-spacing: 0.8px;
@@ -963,6 +1002,19 @@ html, body {
       <button onclick="closeAdvertiseModal()" style="background:rgba(255,255,255,0.08);border:none;color:#fff;width:28px;height:28px;border-radius:50%;font-size:15px;cursor:pointer;">✕</button>
     </div>
     <div class="modal-title">📢 Разместить рекламу</div>
+
+    <!-- Наглядное демо: как реклама выглядит для пользователя приложения —
+         зацикленная анимация: собеседник → свайп → полноэкранная реклама → обратно -->
+    <div class="ad-demo-phone">
+      <div class="ad-demo-person">🧑</div>
+      <div class="ad-demo-adlayer">
+        <div class="ad-demo-badge" id="adDemoBadgeText">📢<br>ВАША<br>РЕКЛАМА</div>
+      </div>
+    </div>
+    <div id="adDemoCaption" style="font-size:11px;color:#6f8bb0;text-align:center;margin-bottom:14px;line-height:1.5;">
+      Так реклама выглядит у пользователя — полноэкранная вставка
+    </div>
+
     <div id="advertiseDescText" style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
       Реклама показывается до исчерпания оплаченного пакета показов, после проверки модератором
     </div>
@@ -1230,6 +1282,20 @@ function renderAdSpecs() {
 
 const STOP_BUTTON_TEXT = { ru:"Стоп", en:"Stop", es:"Detener", tr:"Durdur", it:"Ferma", zh:"停止", ar:"إيقاف", hi:"रोकें", ja:"停止", fr:"Arrêter", de:"Stopp" };
 
+const AD_DEMO_TEXT = {
+  ru: { badge:"📢<br>ВАША<br>РЕКЛАМА", caption:"Так реклама выглядит у пользователя — полноэкранная вставка" },
+  en: { badge:"📢<br>YOUR<br>AD HERE", caption:"This is how your ad looks to the user — a full-screen slide" },
+  es: { badge:"📢<br>TU<br>ANUNCIO", caption:"Así se ve tu anuncio para el usuario — una vista a pantalla completa" },
+  tr: { badge:"📢<br>REKLAMINIZ<br>BURADA", caption:"Reklamınız kullanıcıya böyle görünür — tam ekran bir vitrin" },
+  it: { badge:"📢<br>LA TUA<br>PUBBLICITÀ", caption:"Ecco come appare il tuo annuncio all'utente — a schermo intero" },
+  zh: { badge:"📢<br>您的<br>广告", caption:"这就是用户看到的广告效果 —— 全屏展示" },
+  ar: { badge:"📢<br>إعلانك<br>هنا", caption:"هكذا يظهر إعلانك للمستخدم — شاشة كاملة" },
+  hi: { badge:"📢<br>आपका<br>विज्ञापन", caption:"उपयोगकर्ता को आपका विज्ञापन ऐसा दिखता है — पूरी स्क्रीन पर" },
+  ja: { badge:"📢<br>あなたの<br>広告", caption:"ユーザーにはこのように全画面で広告が表示されます" },
+  fr: { badge:"📢<br>VOTRE<br>PUB", caption:"Voici à quoi ressemble votre publicité pour l'utilisateur — plein écran" },
+  de: { badge:"📢<br>DEINE<br>WERBUNG", caption:"So sieht deine Anzeige für den Nutzer aus — im Vollbild" },
+};
+
 function renderRules() {
   const body = document.getElementById("rulesModalBody");
   if (!body) return;
@@ -1370,6 +1436,12 @@ function applyLanguage(lang) {
   renderAdSpecs();
   const searchStopBtn = document.getElementById("btnStop");
   if (searchStopBtn) searchStopBtn.title = STOP_BUTTON_TEXT[currentLang] || STOP_BUTTON_TEXT.en;
+
+  const adDemo = AD_DEMO_TEXT[currentLang] || AD_DEMO_TEXT.en;
+  const adDemoBadge = document.getElementById("adDemoBadgeText");
+  if (adDemoBadge) adDemoBadge.innerHTML = adDemo.badge;
+  const adDemoCaption = document.getElementById("adDemoCaption");
+  if (adDemoCaption) adDemoCaption.textContent = adDemo.caption;
 
   // Названия опций в модалке страны (сами значения countryMap фиксированы,
   // myCountry тут не участвует — трогать её тут небезопасно, см. selectLanguage)
