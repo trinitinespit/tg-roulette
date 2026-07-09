@@ -40,6 +40,21 @@ html, body {
 }
 .screen[hidden] { display: none !important; }
 
+.lang-switch-btn {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  left: 14px;
+  z-index: 20;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex; align-items: center; gap: 5px;
+}
+
 /* ===== СТАРТОВЫЙ ЭКРАН И ЭКРАН ВХОДА (общий TV-фон) ===== */
 .tv-screen {
   background: transparent;
@@ -623,6 +638,10 @@ html, body {
 <!-- СТАРТОВЫЙ ЭКРАН -->
 <div class="screen tv-screen" id="screenHome">
 
+  <button class="lang-switch-btn" id="langSwitchBtn" onclick="openLangModal()">
+    <span id="langSwitchFlag">🌐</span> <span id="langSwitchCode">EN</span>
+  </button>
+
   <div class="home-content">
 
     <div class="logo-wrap">
@@ -647,7 +666,7 @@ html, body {
     <div class="online-badge">
       <span class="online-dot"></span>
       <span class="online-count" id="onlineCount">–</span>
-      <span>пользователей онлайн</span>
+      <span id="onlineSuffix">пользователей онлайн</span>
     </div>
 
     <div class="filter-row">
@@ -662,23 +681,23 @@ html, body {
     </div>
 
     <button class="btn-start" id="btnStart" onclick="startCamera()">
-      Начать общение
+      <span id="btnStartText">Начать общение</span>
     </button>
 
     <button class="btn-premium" id="btnPremium" onclick="openPremiumModal()">
-      ⭐ Получить Premium
+      ⭐ <span id="btnPremiumText">Получить Premium</span>
     </button>
 
     <button class="btn-premium" id="btnDonate" style="margin-top:8px;background:rgba(255,255,255,0.06);" onclick="openDonateModal()">
-      ❤️ Поддержать проект
+      ❤️ <span id="btnDonateText">Поддержать проект</span>
     </button>
 
     <button class="btn-premium" id="btnAdvertise" style="margin-top:8px;background:rgba(255,255,255,0.06);font-size:13px;" onclick="openAdvertiseModal()">
-      📢 Разместить рекламу
+      📢 <span id="btnAdvertiseText">Разместить рекламу</span>
     </button>
 
     <p class="disclaimer">
-      Используя видеочат, вы соглашаетесь с <span id="rulesLink" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span> и <span onclick="openPrivacyModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">политикой конфиденциальности</span>.<br>
+      <span id="disclaimerPrefix">Используя видеочат, вы соглашаетесь с</span> <span id="rulesLink" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span> <span id="andWord">и</span> <span id="privacyLink" onclick="openPrivacyModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">политикой конфиденциальности</span>.<br>
       Нарушители будут заблокированы.
     </p>
 
@@ -954,7 +973,7 @@ html, body {
 <!-- Попап выбора страны -->
 <div class="modal-backdrop" id="countryModal" hidden onclick="closeCountryModal(event)">
   <div class="modal-sheet">
-    <div class="modal-title">Страна / Язык</div>
+    <div class="modal-title">Страна</div>
     <button class="modal-option" id="cOpt0" onclick="selectCountry(null)">
       <span class="emoji">🌍</span> Весь мир
     </button>
@@ -976,9 +995,107 @@ html, body {
   </div>
 </div>
 
+<!-- Выбор языка интерфейса приложения (отдельно от страны) -->
+<div class="modal-backdrop" id="langModal" hidden onclick="closeLangModal(event)">
+  <div class="modal-sheet" style="max-height:70vh;overflow-y:auto;">
+    <div class="modal-title" id="langModalTitle">Язык приложения</div>
+    <div id="langOptionsList"></div>
+  </div>
+</div>
+
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
+// ─── i18n: язык интерфейса приложения ──────────────────
+// Покрывает основные экраны/кнопки. Если ключа нет для выбранного языка —
+// используется английский, если нет и его — русский текст остаётся как есть в HTML.
+const TRANSLATIONS = {
+  ru: { start_button:"Начать общение", online_suffix:"пользователей онлайн", premium_button:"Получить Premium", donate_button:"Поддержать проект", advertise_button:"Разместить рекламу", disclaimer_prefix:"Используя видеочат, вы соглашаетесь с", rules_link:"правилами", and_word:"и", privacy_link:"политикой конфиденциальности", search_label:"Ищем собеседника…", gender_modal_title:"Ваш пол", gender_male:"Мужской", gender_female:"Женский", chat_placeholder:"Написать сообщение…", report_confirm_msg:"Вы точно хотите пожаловаться на этого пользователя? Жалоба может привести к блокировке его аккаунта.", block_confirm_msg:"Заблокировать этого пользователя? Вы больше никогда не попадёте на него в поиске собеседника — это необратимо.", gender_required_msg:"Сначала укажите ваш пол", lang_modal_title:"Язык приложения" },
+  en: { start_button:"Start chatting", online_suffix:"users online", premium_button:"Get Premium", donate_button:"Support the project", advertise_button:"Advertise here", disclaimer_prefix:"By using this video chat, you agree to the", rules_link:"rules", and_word:"and", privacy_link:"privacy policy", search_label:"Looking for someone…", gender_modal_title:"Your gender", gender_male:"Male", gender_female:"Female", chat_placeholder:"Type a message…", report_confirm_msg:"Are you sure you want to report this user? This may result in their account being banned.", block_confirm_msg:"Block this user? You will never be matched with them again — this cannot be undone.", gender_required_msg:"Please select your gender first", lang_modal_title:"App language" },
+  es: { start_button:"Empezar a chatear", online_suffix:"usuarios en línea", premium_button:"Obtener Premium", donate_button:"Apoyar el proyecto", advertise_button:"Anunciar aquí", disclaimer_prefix:"Al usar este videochat, aceptas las", rules_link:"reglas", and_word:"y", privacy_link:"política de privacidad", search_label:"Buscando compañero…", gender_modal_title:"Tu género", gender_male:"Masculino", gender_female:"Femenino", chat_placeholder:"Escribe un mensaje…", report_confirm_msg:"¿Seguro que quieres denunciar a este usuario? Esto podría bloquear su cuenta.", block_confirm_msg:"¿Bloquear a este usuario? Nunca volverás a coincidir con él — esto no se puede deshacer.", gender_required_msg:"Primero indica tu género", lang_modal_title:"Idioma de la app" },
+  tr: { start_button:"Sohbete başla", online_suffix:"kullanıcı çevrimiçi", premium_button:"Premium Al", donate_button:"Projeyi destekle", advertise_button:"Burada reklam ver", disclaimer_prefix:"Bu görüntülü sohbeti kullanarak şunları kabul edersiniz:", rules_link:"kurallar", and_word:"ve", privacy_link:"gizlilik politikası", search_label:"Biri aranıyor…", gender_modal_title:"Cinsiyetiniz", gender_male:"Erkek", gender_female:"Kadın", chat_placeholder:"Bir mesaj yaz…", report_confirm_msg:"Bu kullanıcıyı şikayet etmek istediğinize emin misiniz? Hesabının engellenmesine yol açabilir.", block_confirm_msg:"Bu kullanıcıyı engelle? Onunla bir daha asla eşleşmezsin — bu geri alınamaz.", gender_required_msg:"Önce cinsiyetinizi seçin", lang_modal_title:"Uygulama dili" },
+  it: { start_button:"Inizia a chattare", online_suffix:"utenti online", premium_button:"Ottieni Premium", donate_button:"Sostieni il progetto", advertise_button:"Fai pubblicità qui", disclaimer_prefix:"Utilizzando questa videochat, accetti le", rules_link:"regole", and_word:"e", privacy_link:"informativa sulla privacy", search_label:"Ricerca in corso…", gender_modal_title:"Il tuo genere", gender_male:"Maschio", gender_female:"Femmina", chat_placeholder:"Scrivi un messaggio…", report_confirm_msg:"Sei sicuro di voler segnalare questo utente? Potrebbe portare al blocco del suo account.", block_confirm_msg:"Bloccare questo utente? Non ti verrà mai più abbinato — azione irreversibile.", gender_required_msg:"Seleziona prima il tuo genere", lang_modal_title:"Lingua dell'app" },
+  zh: { start_button:"开始聊天", online_suffix:"人在线", premium_button:"获取 Premium", donate_button:"支持项目", advertise_button:"在此投放广告", disclaimer_prefix:"使用本视频聊天即表示您同意", rules_link:"规则", and_word:"和", privacy_link:"隐私政策", search_label:"正在寻找聊天对象…", gender_modal_title:"您的性别", gender_male:"男", gender_female:"女", chat_placeholder:"输入消息…", report_confirm_msg:"确定要举报此用户吗？举报可能导致对方账号被封禁。", block_confirm_msg:"拉黑此用户？你将永远不会再匹配到他，此操作无法撤销。", gender_required_msg:"请先选择您的性别", lang_modal_title:"应用语言" },
+  ar: { start_button:"ابدأ الدردشة", online_suffix:"مستخدم متصل", premium_button:"احصل على Premium", donate_button:"ادعم المشروع", advertise_button:"أعلن هنا", disclaimer_prefix:"باستخدامك هذه الدردشة المرئية، فإنك توافق على", rules_link:"القواعد", and_word:"و", privacy_link:"سياسة الخصوصية", search_label:"جارٍ البحث عن شريك…", gender_modal_title:"جنسك", gender_male:"ذكر", gender_female:"أنثى", chat_placeholder:"اكتب رسالة…", report_confirm_msg:"هل أنت متأكد أنك تريد الإبلاغ عن هذا المستخدم؟ قد يؤدي هذا إلى حظر حسابه.", block_confirm_msg:"حظر هذا المستخدم؟ لن يتم توصيلك به مرة أخرى أبدًا — لا يمكن التراجع عن هذا.", gender_required_msg:"يرجى تحديد جنسك أولاً", lang_modal_title:"لغة التطبيق" },
+  hi: { start_button:"चैट शुरू करें", online_suffix:"उपयोगकर्ता ऑनलाइन", premium_button:"Premium प्राप्त करें", donate_button:"प्रोजेक्ट को सपोर्ट करें", advertise_button:"यहाँ विज्ञापन दें", disclaimer_prefix:"इस वीडियो चैट का उपयोग करके, आप सहमत होते हैं", rules_link:"नियमों", and_word:"और", privacy_link:"गोपनीयता नीति", search_label:"साथी खोजा जा रहा है…", gender_modal_title:"आपका लिंग", gender_male:"पुरुष", gender_female:"महिला", chat_placeholder:"संदेश लिखें…", report_confirm_msg:"क्या आप वाकई इस उपयोगकर्ता की रिपोर्ट करना चाहते हैं? इससे उनका अकाउंट ब्लॉक हो सकता है।", block_confirm_msg:"इस उपयोगकर्ता को ब्लॉक करें? आप उनसे दोबारा कभी मैच नहीं होंगे — यह पूर्ववत नहीं किया जा सकता।", gender_required_msg:"कृपया पहले अपना लिंग चुनें", lang_modal_title:"ऐप की भाषा" },
+  ja: { start_button:"チャットを始める", online_suffix:"人がオンライン", premium_button:"Premiumを取得", donate_button:"プロジェクトを応援する", advertise_button:"広告を掲載する", disclaimer_prefix:"このビデオチャットを利用することで、以下に同意したことになります：", rules_link:"利用規約", and_word:"と", privacy_link:"プライバシーポリシー", search_label:"相手を探しています…", gender_modal_title:"性別", gender_male:"男性", gender_female:"女性", chat_placeholder:"メッセージを入力…", report_confirm_msg:"本当にこのユーザーを報告しますか？このアカウントがブロックされる可能性があります。", block_confirm_msg:"このユーザーをブロックしますか？二度とマッチングされなくなります。この操作は取り消せません。", gender_required_msg:"先に性別を選択してください", lang_modal_title:"アプリの言語" },
+  fr: { start_button:"Commencer à discuter", online_suffix:"utilisateurs en ligne", premium_button:"Obtenir Premium", donate_button:"Soutenir le projet", advertise_button:"Faire de la pub ici", disclaimer_prefix:"En utilisant ce chat vidéo, vous acceptez les", rules_link:"règles", and_word:"et", privacy_link:"politique de confidentialité", search_label:"Recherche d'un interlocuteur…", gender_modal_title:"Votre genre", gender_male:"Homme", gender_female:"Femme", chat_placeholder:"Écrire un message…", report_confirm_msg:"Voulez-vous vraiment signaler cet utilisateur ? Cela peut entraîner le bannissement de son compte.", block_confirm_msg:"Bloquer cet utilisateur ? Vous ne serez plus jamais mis en relation avec lui — action irréversible.", gender_required_msg:"Veuillez d'abord indiquer votre genre", lang_modal_title:"Langue de l'application" },
+  de: { start_button:"Chat starten", online_suffix:"Nutzer online", premium_button:"Premium holen", donate_button:"Projekt unterstützen", advertise_button:"Hier werben", disclaimer_prefix:"Durch die Nutzung dieses Videochats stimmst du den", rules_link:"Regeln", and_word:"und", privacy_link:"Datenschutzrichtlinie", search_label:"Gesprächspartner wird gesucht…", gender_modal_title:"Dein Geschlecht", gender_male:"Männlich", gender_female:"Weiblich", chat_placeholder:"Nachricht schreiben…", report_confirm_msg:"Möchtest du diesen Nutzer wirklich melden? Das kann zur Sperrung seines Kontos führen.", block_confirm_msg:"Diesen Nutzer blockieren? Du wirst nie wieder mit ihm verbunden — das kann nicht rückgängig gemacht werden.", gender_required_msg:"Bitte zuerst dein Geschlecht auswählen", lang_modal_title:"App-Sprache" },
+};
+const LANG_DISPLAY = {
+  ru: { flag:"🇷🇺", code:"RU" }, en: { flag:"🇺🇸", code:"EN" }, es: { flag:"🇪🇸", code:"ES" },
+  tr: { flag:"🇹🇷", code:"TR" }, it: { flag:"🇮🇹", code:"IT" }, zh: { flag:"🇨🇳", code:"ZH" },
+  ar: { flag:"🇸🇦", code:"AR" }, hi: { flag:"🇮🇳", code:"HI" }, ja: { flag:"🇯🇵", code:"JA" },
+  fr: { flag:"🇫🇷", code:"FR" }, de: { flag:"🇩🇪", code:"DE" },
+};
+
+let currentLang = "ru";
+
+function translate(key) {
+  return TRANSLATIONS[currentLang]?.[key] ?? TRANSLATIONS.en[key] ?? key;
+}
+
+function applyLanguage(lang) {
+  currentLang = TRANSLATIONS[lang] ? lang : "en";
+  localStorage.setItem("spinny_lang", currentLang);
+
+  const map = {
+    btnStartText: "start_button", onlineSuffix: "online_suffix", btnPremiumText: "premium_button",
+    btnDonateText: "donate_button", btnAdvertiseText: "advertise_button", disclaimerPrefix: "disclaimer_prefix",
+    rulesLink: "rules_link", andWord: "and_word", privacyLink: "privacy_link", langModalTitle: "lang_modal_title",
+  };
+  for (const [id, key] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = translate(key);
+  }
+
+  const chatInput = document.getElementById("chatInput");
+  if (chatInput) chatInput.placeholder = translate("chat_placeholder");
+
+  const searchLabel = document.querySelector(".search-label");
+  if (searchLabel) searchLabel.textContent = translate("search_label");
+
+  const genderModalTitle = document.querySelector("#genderModal .modal-title");
+  if (genderModalTitle) genderModalTitle.textContent = translate("gender_modal_title");
+  const gOpt1Text = document.querySelector("#gOpt1");
+  const gOpt2Text = document.querySelector("#gOpt2");
+  if (gOpt1Text) gOpt1Text.lastChild.textContent = " " + translate("gender_male");
+  if (gOpt2Text) gOpt2Text.lastChild.textContent = " " + translate("gender_female");
+
+  const switchFlag = document.getElementById("langSwitchFlag");
+  const switchCode = document.getElementById("langSwitchCode");
+  if (switchFlag) switchFlag.textContent = LANG_DISPLAY[currentLang]?.flag || "🌐";
+  if (switchCode) switchCode.textContent = LANG_DISPLAY[currentLang]?.code || "EN";
+}
+
+function detectInitialLanguage() {
+  const saved = localStorage.getItem("spinny_lang");
+  if (saved && TRANSLATIONS[saved]) return saved;
+  const tgLang = (window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code || "").split("-")[0];
+  if (TRANSLATIONS[tgLang]) return tgLang;
+  return "en"; // нет перевода для языка Telegram — по умолчанию английский, как договаривались
+}
+
+function openLangModal() {
+  const list = document.getElementById("langOptionsList");
+  list.innerHTML = Object.keys(TRANSLATIONS).map(code => `
+    <button class="modal-option ${code === currentLang ? 'selected' : ''}" onclick="selectLanguage('${code}')">
+      <span class="emoji">${LANG_DISPLAY[code].flag}</span> ${LANG_DISPLAY[code].code}
+    </button>`).join("");
+  document.getElementById("langModal").hidden = false;
+}
+function closeLangModal(e) {
+  if (!e || e.target === document.getElementById("langModal")) {
+    document.getElementById("langModal").hidden = true;
+  }
+}
+function selectLanguage(code) {
+  applyLanguage(code);
+  document.getElementById("langModal").hidden = true;
+}
+
+applyLanguage(detectInitialLanguage());
+
 // ─── Telegram ───────────────────────────────────────────
 const tg = window.Telegram?.WebApp;
 const myTelegramId = tg?.initDataUnsafe?.user?.id || null;
@@ -1295,13 +1412,14 @@ window.onTelegramWidgetAuth = onTelegramWidgetAuth;
 async function startCamera() {
   if (!myGender) {
     openGenderModal();
-    showError("Сначала укажите ваш пол");
+    showError(translate("gender_required_msg"));
     return;
   }
 
   const btn = document.getElementById("btnStart");
+  const btnTextEl = document.getElementById("btnStartText");
   btn.disabled = true;
-  btn.textContent = "Включаем камеру…";
+  btnTextEl.textContent = "Включаем камеру…";
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = stream;
@@ -1311,7 +1429,7 @@ async function startCamera() {
     doFind();
   } catch(e) {
     btn.disabled = false;
-    btn.textContent = "Начать общение";
+    btnTextEl.textContent = translate("start_button");
     showError("Не удалось получить доступ к камере: " + e.message);
   }
 }
@@ -1377,7 +1495,7 @@ async function doNext() {
 }
 
 function doBlock() {
-  const confirmMsg = "Заблокировать этого пользователя? Вы больше никогда не попадёте на него в поиске собеседника — это необратимо.";
+  const confirmMsg = translate("block_confirm_msg");
   if (tg && typeof tg.showConfirm === "function") {
     tg.showConfirm(confirmMsg, (ok) => { if (ok) doBlockConfirmed(); });
   } else {
@@ -1395,7 +1513,7 @@ function doBlockConfirmed() {
 
 function doReport() {
   if (!room) return;
-  const confirmMsg = "Вы точно хотите пожаловаться на этого пользователя? Жалоба может привести к блокировке его аккаунта.";
+  const confirmMsg = translate("report_confirm_msg");
   if (tg && typeof tg.showConfirm === "function") {
     tg.showConfirm(confirmMsg, (ok) => { if (ok) doReportConfirmed(); });
   } else {
@@ -1528,7 +1646,8 @@ socket.on("banned", data => {
 socket.on("unbanned", () => {
   const btn = document.getElementById("btnStart");
   btn.disabled = false;
-  btn.textContent = "Начать общение";
+  btn.innerHTML = '<span id="btnStartText"></span>';
+  document.getElementById("btnStartText").textContent = translate("start_button");
   document.getElementById("unbanBtn")?.remove();
   showError("✅ Аккаунт разблокирован! Можете продолжать.");
 });
