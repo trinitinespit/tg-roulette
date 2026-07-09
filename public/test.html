@@ -829,7 +829,7 @@ html, body {
 <div class="modal-backdrop" id="privacyModal" hidden onclick="closePrivacyModal(event)">
   <div class="modal-sheet" style="max-height:80vh;overflow-y:auto;">
     <div class="modal-title" id="privacyModalTitle">Политика конфиденциальности</div>
-    <div style="font-size:13px;line-height:1.7;color:#cbd5e1;">
+    <div id="privacyModalBody" style="font-size:13px;line-height:1.7;color:#cbd5e1;">
       <p style="margin-bottom:10px;"><b style="color:#fff;">Какие данные мы собираем:</b> ваш Telegram ID, имя пользователя, язык интерфейса, пол (если указали) и статус Premium. Видео и аудио во время звонков передаются напрямую между вами и собеседником (peer-to-peer) или через TURN-сервер-ретранслятор и не записываются нами.</p>
       <p style="margin-bottom:10px;"><b style="color:#fff;">Скриншоты при жалобах:</b> если вы или ваш собеседник нажимаете «Пожаловаться», делается один кадр с видео для автоматической и, при необходимости, ручной проверки на нарушение правил. Хранится вместе с записью о жалобе.</p>
       <p style="margin-bottom:10px;"><b style="color:#fff;">Платежи:</b> обрабатываются через Telegram Stars или TON — мы не храним данные ваших банковских карт.</p>
@@ -910,7 +910,7 @@ html, body {
       <option id="adTypeVideoOpt" value="video" style="color:#000;">🎬 Видео (во время поиска)</option>
     </select>
     <input type="text" id="adFormMediaUrl" placeholder="Ссылка на картинку/видео" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:6px;"/>
-    <div style="font-size:11px;color:#6f8bb0;margin-bottom:10px;line-height:1.5;">
+    <div id="adSpecsText" style="font-size:11px;color:#6f8bb0;margin-bottom:10px;line-height:1.5;">
       Картинка: 1080×608px (16:9) или 1080×1080px (1:1), JPEG/PNG/WebP, до 500КБ.<br>
       Видео: 1080×1920px (9:16, вертикальное), MP4/H.264, до 15 секунд.
     </div>
@@ -931,7 +931,7 @@ html, body {
       <button class="modal-option" id="adPayTonBtn" style="flex:1;justify-content:center;" onclick="selectAdPayment('ton')">💎 TON</button>
     </div>
 
-    <div style="font-size:11px;color:#6f8bb0;background:rgba(255,255,255,0.04);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;">
+    <div id="adProhibitedText" style="font-size:11px;color:#6f8bb0;background:rgba(255,255,255,0.04);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;">
       <b style="color:#f87171;">Запрещено рекламировать:</b> наркотики и психоактивные вещества, порнографию и сексуальные услуги, оружие, поддельные документы, мошеннические/пирамидальные схемы, контент для несовершеннолетних. Заявки с таким содержанием будут <b>отклонены без возврата средств</b>. Гемблинг/беттинг — только при наличии лицензии, укажите её в названии заявки.
     </div>
 
@@ -1099,6 +1099,73 @@ const RULES_CONTENT = {
   de: { intro:"Willkommen bei Spinny — einem zufälligen Videochat, um Menschen aus aller Welt kennenzulernen. Bitte halte dich an die Community-Regeln:", prohibited_title:"Verboten:", p1:"Nacktheit und sexuelle Inhalte", p2:"Beleidigungen, Drohungen, Hassrede", p3_pre:"Inhalte mit Minderjährigen — ", p3_bold:"sofortige Sperrung", p4:"Spam, Werbung, Bettelei", p5:"Aufnahme des Gesprächspartners ohne Zustimmung", p6:"Veröffentlichung persönlicher Daten anderer Nutzer", respect_title:"Respektiere andere:", r1:"Kommuniziere höflich und freundlich", r2:'Tippe auf "Weiter", wenn der Partner nicht passt', r3:"Nutze die Melden-Schaltfläche 🚩, wenn jemand gegen die Regeln verstößt", footer:"Regelverstöße führen zur Kontosperrung. Wir behalten uns das Recht vor, Nutzer bei schweren Verstößen ohne Vorwarnung zu sperren." },
 };
 
+// Названия стран в селекторе — переводятся под текущий язык интерфейса
+// (сам список стран остаётся тем же, меняется только подпись)
+const COUNTRY_NAMES = {
+  ru: { ru:"Россия", en:"Russia", es:"Rusia", tr:"Rusya", it:"Russia", zh:"俄罗斯", ar:"روسيا", hi:"रूस", ja:"ロシア", fr:"Russie", de:"Russland" },
+  en: { ru:"Английский", en:"English", es:"Inglés", tr:"İngilizce", it:"Inglese", zh:"英语", ar:"الإنجليزية", hi:"अंग्रेज़ी", ja:"英語", fr:"Anglais", de:"Englisch" },
+  de: { ru:"Германия", en:"Germany", es:"Alemania", tr:"Almanya", it:"Germania", zh:"德国", ar:"ألمانيا", hi:"जर्मनी", ja:"ドイツ", fr:"Allemagne", de:"Deutschland" },
+  tr: { ru:"Турция", en:"Turkey", es:"Turquía", tr:"Türkiye", it:"Turchia", zh:"土耳其", ar:"تركيا", hi:"तुर्की", ja:"トルコ", fr:"Turquie", de:"Türkei" },
+  es: { ru:"Испания", en:"Spain", es:"España", tr:"İspanya", it:"Spagna", zh:"西班牙", ar:"إسبانيا", hi:"स्पेन", ja:"スペイン", fr:"Espagne", de:"Spanien" },
+};
+function countryName(code) {
+  if (!code) return translate("world_wide");
+  return COUNTRY_NAMES[code]?.[currentLang] || COUNTRY_NAMES[code]?.en || code;
+}
+
+// Политика конфиденциальности на 11 языках — реальные юридические формулировки,
+// переведено по прямой просьбе, но стоит сверить с юристом перед широким запуском.
+const PRIVACY_CONTENT = {
+  ru: { data_title:"Какие данные мы собираем:", data_body:"ваш Telegram ID, имя пользователя, язык интерфейса, пол (если указали) и статус Premium. Видео и аудио во время звонков передаются напрямую между вами и собеседником (peer-to-peer) или через TURN-сервер-ретранслятор и не записываются нами.", shots_title:"Скриншоты при жалобах:", shots_body:"если вы или ваш собеседник нажимаете «Пожаловаться», делается один кадр с видео для автоматической и, при необходимости, ручной проверки на нарушение правил. Хранится вместе с записью о жалобе.", pay_title:"Платежи:", pay_body:"обрабатываются через Telegram Stars или TON — мы не храним данные ваших банковских карт.", share_title:"Кому передаются данные:", share_body:"стороннему сервису модерации контента (Sightengine) — только кадр из жалобы, для проверки на нарушения. Больше третьим лицам данные не передаются и не продаются.", storage_title:"Хранение:", storage_body:"данные хранятся, пока у вас есть аккаунт. Вы можете запросить удаление данных, написав в поддержку через бота.", footer:"Используя Spinny, вы соглашаетесь с этой политикой. Мы можем обновлять её — актуальная версия всегда доступна в этом окне." },
+  en: { data_title:"What data we collect:", data_body:"your Telegram ID, username, interface language, gender (if provided), and Premium status. Video and audio during calls are transmitted directly between you and your partner (peer-to-peer) or through a TURN relay server, and are not recorded by us.", shots_title:"Screenshots on reports:", shots_body:"if you or your partner tap \"Report\", one video frame is captured for automatic and, if needed, manual review of a rule violation. It's stored together with the report record.", pay_title:"Payments:", pay_body:"processed via Telegram Stars or TON — we don't store your bank card details.", share_title:"Who we share data with:", share_body:"a third-party content moderation service (Sightengine) — only the frame from a report, to check for violations. Data is not shared with or sold to anyone else.", storage_title:"Storage:", storage_body:"data is kept as long as you have an account. You can request data deletion by contacting support via the bot.", footer:"By using Spinny, you agree to this policy. We may update it — the current version is always available in this window." },
+  es: { data_title:"Qué datos recopilamos:", data_body:"tu ID de Telegram, nombre de usuario, idioma de la interfaz, género (si lo indicaste) y estado Premium. El video y el audio durante las llamadas se transmiten directamente entre tú y tu interlocutor (peer-to-peer) o a través de un servidor TURN, y no los grabamos.", shots_title:"Capturas al denunciar:", shots_body:"si tú o tu interlocutor pulsáis \"Denunciar\", se captura un fotograma del video para su revisión automática y, si es necesario, manual. Se guarda junto con el registro de la denuncia.", pay_title:"Pagos:", pay_body:"se procesan mediante Telegram Stars o TON — no almacenamos los datos de tus tarjetas bancarias.", share_title:"A quién se transfieren los datos:", share_body:"a un servicio externo de moderación de contenido (Sightengine) — solo el fotograma de la denuncia, para revisar infracciones. No compartimos ni vendemos datos a terceros.", storage_title:"Almacenamiento:", storage_body:"los datos se conservan mientras tengas una cuenta. Puedes solicitar su eliminación escribiendo al soporte a través del bot.", footer:"Al usar Spinny, aceptas esta política. Podemos actualizarla — la versión vigente siempre está disponible en esta ventana." },
+  tr: { data_title:"Hangi verileri topluyoruz:", data_body:"Telegram ID'niz, kullanıcı adınız, arayüz diliniz, cinsiyetiniz (belirttiyseniz) ve Premium durumunuz. Görüşme sırasındaki video ve ses, sizinle karşı taraf arasında doğrudan (peer-to-peer) veya bir TURN aktarım sunucusu üzerinden iletilir ve tarafımızca kaydedilmez.", shots_title:"Şikayetlerde ekran görüntüsü:", shots_body:"siz veya karşı taraf \"Şikayet et\"e dokunursanız, otomatik ve gerekirse manuel inceleme için videodan tek bir kare alınır. Şikayet kaydıyla birlikte saklanır.", pay_title:"Ödemeler:", pay_body:"Telegram Stars veya TON üzerinden işlenir — banka kartı bilgilerinizi saklamayız.", share_title:"Veriler kimlerle paylaşılır:", share_body:"üçüncü taraf bir içerik denetim hizmetiyle (Sightengine) — yalnızca şikayetteki kare, ihlalleri kontrol etmek için. Veriler başka kimseyle paylaşılmaz veya satılmaz.", storage_title:"Saklama:", storage_body:"veriler hesabınız var olduğu sürece saklanır. Bot üzerinden destek ekibine yazarak verilerinizin silinmesini talep edebilirsiniz.", footer:"Spinny'yi kullanarak bu politikayı kabul etmiş olursunuz. Politikayı güncelleyebiliriz — güncel sürüm her zaman bu pencerede bulunur." },
+  it: { data_title:"Quali dati raccogliamo:", data_body:"il tuo ID Telegram, nome utente, lingua dell'interfaccia, genere (se indicato) e stato Premium. Video e audio durante le chiamate vengono trasmessi direttamente tra te e l'interlocutore (peer-to-peer) o tramite un server di relay TURN, e non vengono registrati da noi.", shots_title:"Screenshot in caso di segnalazione:", shots_body:"se tu o il tuo interlocutore toccate \"Segnala\", viene catturato un fotogramma del video per la revisione automatica e, se necessario, manuale. Viene conservato insieme alla segnalazione.", pay_title:"Pagamenti:", pay_body:"elaborati tramite Telegram Stars o TON — non conserviamo i dati della tua carta bancaria.", share_title:"A chi vengono trasmessi i dati:", share_body:"a un servizio di moderazione dei contenuti di terze parti (Sightengine) — solo il fotogramma della segnalazione, per verificare le violazioni. I dati non vengono condivisi né venduti a terzi.", storage_title:"Conservazione:", storage_body:"i dati vengono conservati finché hai un account. Puoi richiedere la cancellazione dei dati scrivendo al supporto tramite il bot.", footer:"Utilizzando Spinny, accetti questa informativa. Potremmo aggiornarla — la versione attuale è sempre disponibile in questa finestra." },
+  zh: { data_title:"我们收集哪些数据：", data_body:"您的 Telegram ID、用户名、界面语言、性别（如已填写）以及 Premium 状态。通话期间的视频和音频直接在您与对方之间（点对点）传输，或通过 TURN 中继服务器传输，我们不会进行录制。", shots_title:"举报时的截图：", shots_body:"如果您或对方点击「举报」，将截取一帧视频画面用于自动审核，必要时进行人工审核，并与举报记录一起保存。", pay_title:"支付：", pay_body:"通过 Telegram Stars 或 TON 处理 —— 我们不存储您的银行卡信息。", share_title:"数据会分享给谁：", share_body:"第三方内容审核服务（Sightengine）—— 仅分享举报中的截图，用于审核违规内容。数据不会分享或出售给其他任何第三方。", storage_title:"数据保存：", storage_body:"只要您的账号存在，数据就会被保留。您可以通过机器人联系客服，申请删除数据。", footer:"使用 Spinny 即表示您同意本政策。我们可能会更新本政策 —— 最新版本始终可在此窗口查看。" },
+  ar: { data_title:"البيانات التي نجمعها:", data_body:"معرّف Telegram الخاص بك، اسم المستخدم، لغة الواجهة، الجنس (إن حددته)، وحالة Premium. يتم نقل الفيديو والصوت أثناء المكالمات مباشرة بينك وبين الطرف الآخر (نظير إلى نظير) أو عبر خادم ترحيل TURN، ولا نقوم بتسجيلها.", shots_title:"لقطات الشاشة عند الإبلاغ:", shots_body:"إذا ضغطت أنت أو الطرف الآخر على \"إبلاغ\"، يتم التقاط إطار واحد من الفيديو للمراجعة التلقائية، وإذا لزم الأمر، المراجعة اليدوية. يُحفظ مع سجل البلاغ.", pay_title:"المدفوعات:", pay_body:"تتم معالجتها عبر Telegram Stars أو TON — لا نخزّن بيانات بطاقتك البنكية.", share_title:"لمن تُشارَك البيانات:", share_body:"خدمة إشراف على المحتوى تابعة لجهة خارجية (Sightengine) — فقط الإطار من البلاغ، للتحقق من المخالفات. لا تتم مشاركة البيانات أو بيعها لأي طرف آخر.", storage_title:"التخزين:", storage_body:"تُحفظ البيانات طالما لديك حساب. يمكنك طلب حذف بياناتك بالتواصل مع الدعم عبر البوت.", footer:"باستخدامك لـ Spinny، فإنك توافق على هذه السياسة. قد نقوم بتحديثها — النسخة الحالية متاحة دائمًا في هذه النافذة." },
+  hi: { data_title:"हम कौन-सा डेटा एकत्र करते हैं:", data_body:"आपका Telegram ID, उपयोगकर्ता नाम, इंटरफ़ेस भाषा, लिंग (यदि बताया हो) और Premium स्थिति। कॉल के दौरान वीडियो और ऑडियो सीधे आपके और साथी के बीच (peer-to-peer) या TURN रिले सर्वर के माध्यम से भेजे जाते हैं, और हम इन्हें रिकॉर्ड नहीं करते।", shots_title:"रिपोर्ट पर स्क्रीनशॉट:", shots_body:"यदि आप या आपका साथी \"रिपोर्ट करें\" दबाते हैं, तो नियम उल्लंघन की स्वचालित और आवश्यकता पड़ने पर मैन्युअल जांच के लिए वीडियो का एक फ्रेम लिया जाता है। इसे रिपोर्ट रिकॉर्ड के साथ संग्रहीत किया जाता है।", pay_title:"भुगतान:", pay_body:"Telegram Stars या TON के माध्यम से संसाधित होते हैं — हम आपके बैंक कार्ड का डेटा संग्रहीत नहीं करते।", share_title:"डेटा किसके साथ साझा किया जाता है:", share_body:"एक तृतीय-पक्ष कंटेंट मॉडरेशन सेवा (Sightengine) के साथ — केवल रिपोर्ट से लिया गया फ्रेम, उल्लंघनों की जांच के लिए। डेटा किसी अन्य के साथ साझा या बेचा नहीं जाता।", storage_title:"भंडारण:", storage_body:"जब तक आपका अकाउंट है, तब तक डेटा रखा जाता है। आप बॉट के माध्यम से सहायता से संपर्क करके डेटा हटाने का अनुरोध कर सकते हैं।", footer:"Spinny का उपयोग करके, आप इस नीति से सहमत होते हैं। हम इसे अपडेट कर सकते हैं — मौजूदा संस्करण हमेशा इस विंडो में उपलब्ध होता है।" },
+  ja: { data_title:"収集するデータ：", data_body:"あなたのTelegram ID、ユーザー名、インターフェース言語、性別（入力した場合）、Premiumステータス。通話中の映像と音声は、あなたと相手の間で直接（ピアツーピア）、またはTURN中継サーバーを経由して送信され、当社が録画・録音することはありません。", shots_title:"報告時のスクリーンショット：", shots_body:"あなたまたは相手が「報告」をタップすると、規約違反の自動確認、必要に応じて手動確認のために動画から1フレームが取得されます。報告記録とともに保存されます。", pay_title:"お支払い：", pay_body:"Telegram StarsまたはTON経由で処理されます — 銀行カード情報は保存しません。", share_title:"データの共有先：", share_body:"第三者のコンテンツモデレーションサービス（Sightengine）— 違反確認のため、報告時のフレームのみを共有します。それ以外の第三者にデータを共有・販売することはありません。", storage_title:"保存：", storage_body:"アカウントが存在する限りデータを保存します。ボット経由でサポートに連絡することでデータ削除を依頼できます。", footer:"Spinnyを利用することで、本ポリシーに同意したものとみなされます。本ポリシーは更新される場合があります — 最新版は常にこのウィンドウでご確認いただけます。" },
+  fr: { data_title:"Quelles données nous collectons :", data_body:"votre ID Telegram, nom d'utilisateur, langue de l'interface, genre (si renseigné) et statut Premium. La vidéo et l'audio pendant les appels sont transmis directement entre vous et votre interlocuteur (peer-to-peer) ou via un serveur relais TURN, et ne sont pas enregistrés par nous.", shots_title:"Captures d'écran lors des signalements :", shots_body:"si vous ou votre interlocuteur appuyez sur \"Signaler\", une image de la vidéo est capturée pour une vérification automatique et, si nécessaire, manuelle d'une infraction. Elle est conservée avec le signalement.", pay_title:"Paiements :", pay_body:"traités via Telegram Stars ou TON — nous ne stockons pas les données de votre carte bancaire.", share_title:"À qui les données sont transmises :", share_body:"à un service tiers de modération de contenu (Sightengine) — uniquement l'image du signalement, pour vérifier les infractions. Les données ne sont partagées ni vendues à personne d'autre.", storage_title:"Conservation :", storage_body:"les données sont conservées tant que vous avez un compte. Vous pouvez demander la suppression de vos données en contactant le support via le bot.", footer:"En utilisant Spinny, vous acceptez cette politique. Nous pouvons la mettre à jour — la version actuelle est toujours disponible dans cette fenêtre." },
+  de: { data_title:"Welche Daten wir erheben:", data_body:"deine Telegram-ID, deinen Benutzernamen, die Oberflächensprache, dein Geschlecht (falls angegeben) und deinen Premium-Status. Video und Audio während der Anrufe werden direkt zwischen dir und deinem Gesprächspartner (Peer-to-Peer) oder über einen TURN-Relay-Server übertragen und von uns nicht aufgezeichnet.", shots_title:"Screenshots bei Meldungen:", shots_body:"wenn du oder dein Gesprächspartner auf \"Melden\" tippt, wird ein Videoframe für die automatische und bei Bedarf manuelle Prüfung eines Regelverstoßes erfasst. Es wird zusammen mit der Meldung gespeichert.", pay_title:"Zahlungen:", pay_body:"werden über Telegram Stars oder TON abgewickelt — wir speichern keine Daten deiner Bankkarte.", share_title:"An wen Daten weitergegeben werden:", share_body:"an einen externen Content-Moderationsdienst (Sightengine) — nur das Frame aus der Meldung, zur Prüfung auf Verstöße. Daten werden sonst an niemanden weitergegeben oder verkauft.", storage_title:"Speicherung:", storage_body:"Daten werden gespeichert, solange du ein Konto hast. Du kannst die Löschung deiner Daten beantragen, indem du den Support über den Bot kontaktierst.", footer:"Durch die Nutzung von Spinny stimmst du dieser Richtlinie zu. Wir können sie aktualisieren — die aktuelle Version ist immer in diesem Fenster verfügbar." },
+};
+
+function renderPrivacy() {
+  const body = document.getElementById("privacyModalBody");
+  if (!body) return;
+  const t = PRIVACY_CONTENT[currentLang] || PRIVACY_CONTENT.en;
+  body.innerHTML = `
+    <p style="margin-bottom:10px;"><b style="color:#fff;">${t.data_title}</b> ${t.data_body}</p>
+    <p style="margin-bottom:10px;"><b style="color:#fff;">${t.shots_title}</b> ${t.shots_body}</p>
+    <p style="margin-bottom:10px;"><b style="color:#fff;">${t.pay_title}</b> ${t.pay_body}</p>
+    <p style="margin-bottom:10px;"><b style="color:#fff;">${t.share_title}</b> ${t.share_body}</p>
+    <p style="margin-bottom:10px;"><b style="color:#fff;">${t.storage_title}</b> ${t.storage_body}</p>
+    <p style="color:#9AB2CC;font-size:12px;">${t.footer}</p>
+  `;
+}
+
+// Требования к файлам и запрещённый контент в форме рекламы
+const AD_SPECS_CONTENT = {
+  ru: { img:"Картинка: 1080×608px (16:9) или 1080×1080px (1:1), JPEG/PNG/WebP, до 500КБ.", vid:"Видео: 1080×1920px (9:16, вертикальное), MP4/H.264, до 15 секунд.", prohib_label:"Запрещено рекламировать:", prohib_body:' наркотики и психоактивные вещества, порнографию и сексуальные услуги, оружие, поддельные документы, мошеннические/пирамидальные схемы, контент для несовершеннолетних. Заявки с таким содержанием будут <b>отклонены без возврата средств</b>. Гемблинг/беттинг — только при наличии лицензии, укажите её в названии заявки.' },
+  en: { img:"Image: 1080×608px (16:9) or 1080×1080px (1:1), JPEG/PNG/WebP, up to 500KB.", vid:"Video: 1080×1920px (9:16, vertical), MP4/H.264, up to 15 seconds.", prohib_label:"Prohibited content:", prohib_body:' drugs and psychoactive substances, pornography and sexual services, weapons, forged documents, fraudulent/pyramid schemes, content involving minors. Submissions with such content will be <b>rejected without a refund</b>. Gambling/betting — only with a valid license, please state it in the request name.' },
+  es: { img:"Imagen: 1080×608px (16:9) o 1080×1080px (1:1), JPEG/PNG/WebP, hasta 500KB.", vid:"Video: 1080×1920px (9:16, vertical), MP4/H.264, hasta 15 segundos.", prohib_label:"Prohibido anunciar:", prohib_body:' drogas y sustancias psicoactivas, pornografía y servicios sexuales, armas, documentos falsificados, esquemas fraudulentos/piramidales, contenido con menores. Las solicitudes con dicho contenido serán <b>rechazadas sin reembolso</b>. Apuestas/juego — solo con licencia vigente, indícala en el nombre de la solicitud.' },
+  tr: { img:"Görsel: 1080×608px (16:9) veya 1080×1080px (1:1), JPEG/PNG/WebP, en fazla 500KB.", vid:"Video: 1080×1920px (9:16, dikey), MP4/H.264, en fazla 15 saniye.", prohib_label:"Reklamı yasak olanlar:", prohib_body:' uyuşturucu ve psikoaktif maddeler, pornografi ve cinsel hizmetler, silahlar, sahte belgeler, dolandırıcılık/piramit şemaları, reşit olmayanlarla ilgili içerik. Bu tür içerikli talepler <b>iade yapılmadan reddedilecektir</b>. Kumar/bahis — yalnızca geçerli bir lisansla, lütfen talep adında belirtin.' },
+  it: { img:"Immagine: 1080×608px (16:9) o 1080×1080px (1:1), JPEG/PNG/WebP, fino a 500KB.", vid:"Video: 1080×1920px (9:16, verticale), MP4/H.264, fino a 15 secondi.", prohib_label:"Vietato pubblicizzare:", prohib_body:" droghe e sostanze psicoattive, pornografia e servizi sessuali, armi, documenti falsi, schemi fraudolenti/piramidali, contenuti con minori. Le richieste con tali contenuti saranno <b>rifiutate senza rimborso</b>. Gioco d'azzardo/scommesse — solo con licenza valida, indicala nel nome della richiesta." },
+  zh: { img:"图片：1080×608px（16:9）或 1080×1080px（1:1），JPEG/PNG/WebP，最大 500KB。", vid:"视频：1080×1920px（9:16，竖屏），MP4/H.264，最长 15 秒。", prohib_label:"禁止投放的内容：", prohib_body:' 毒品和精神活性物质、色情内容及性服务、武器、伪造证件、诈骗/传销、涉及未成年人的内容。含有此类内容的申请将被<b>拒绝且不予退款</b>。博彩/投注——仅限持有有效牌照，请在申请名称中注明。' },
+  ar: { img:"الصورة: 1080×608px (16:9) أو 1080×1080px (1:1)، JPEG/PNG/WebP، حتى 500 كيلوبايت.", vid:"الفيديو: 1080×1920px (9:16، عمودي)، MP4/H.264، حتى 15 ثانية.", prohib_label:"يُمنع الإعلان عن:", prohib_body:' المخدرات والمواد ذات التأثير النفسي، المواد الإباحية والخدمات الجنسية، الأسلحة، الوثائق المزورة، المخططات الاحتيالية/الهرمية، المحتوى المتعلق بالقُصَّر. سيتم <b>رفض الطلبات ذات المحتوى المماثل دون استرداد الأموال</b>. القمار/الرهان — فقط بوجود ترخيص ساري، يُرجى ذكره في اسم الطلب.' },
+  hi: { img:"छवि: 1080×608px (16:9) या 1080×1080px (1:1), JPEG/PNG/WebP, अधिकतम 500KB।", vid:"वीडियो: 1080×1920px (9:16, वर्टिकल), MP4/H.264, अधिकतम 15 सेकंड।", prohib_label:"किसका विज्ञापन करना प्रतिबंधित है:", prohib_body:' ड्रग्स और मनोदैहिक पदार्थ, अश्लील सामग्री और यौन सेवाएँ, हथियार, जाली दस्तावेज़, धोखाधड़ी/पिरामिड योजनाएँ, नाबालिगों से जुड़ी सामग्री। ऐसी सामग्री वाले अनुरोधों को <b>बिना धनवापसी के अस्वीकार कर दिया जाएगा</b>। जुआ/सट्टा — केवल वैध लाइसेंस होने पर, कृपया अनुरोध के नाम में इसका उल्लेख करें।' },
+  ja: { img:"画像：1080×608px（16:9）または1080×1080px（1:1）、JPEG/PNG/WebP、最大500KB。", vid:"動画：1080×1920px（9:16、縦向き）、MP4/H.264、最大15秒。", prohib_label:"広告禁止事項：", prohib_body:' 麻薬・向精神薬、ポルノおよび性的サービス、武器、偽造文書、詐欺・ねずみ講、未成年者に関するコンテンツ。該当する内容の申請は<b>返金なしで却下されます</b>。ギャンブル・賭博 — 有効なライセンスがある場合のみ、申請名にその旨を明記してください。' },
+  fr: { img:"Image : 1080×608px (16:9) ou 1080×1080px (1:1), JPEG/PNG/WebP, jusqu'à 500 Ko.", vid:"Vidéo : 1080×1920px (9:16, vertical), MP4/H.264, jusqu'à 15 secondes.", prohib_label:"Publicité interdite pour :", prohib_body:" les drogues et substances psychoactives, la pornographie et les services sexuels, les armes, les faux documents, les schémas frauduleux/pyramidaux, le contenu impliquant des mineurs. Les demandes contenant un tel contenu seront <b>rejetées sans remboursement</b>. Jeux d'argent/paris — uniquement avec une licence valide, à indiquer dans le nom de la demande." },
+  de: { img:"Bild: 1080×608px (16:9) oder 1080×1080px (1:1), JPEG/PNG/WebP, bis zu 500KB.", vid:"Video: 1080×1920px (9:16, vertikal), MP4/H.264, bis zu 15 Sekunden.", prohib_label:"Werbung verboten für:", prohib_body:" Drogen und psychoaktive Substanzen, Pornografie und sexuelle Dienstleistungen, Waffen, gefälschte Dokumente, betrügerische/Schneeball-Systeme, Inhalte mit Minderjährigen. Anfragen mit solchen Inhalten werden <b>ohne Rückerstattung abgelehnt</b>. Glücksspiel/Wetten — nur mit gültiger Lizenz, bitte im Namen der Anfrage angeben." },
+};
+
+function renderAdSpecs() {
+  const specsEl = document.getElementById("adSpecsText");
+  const prohibEl = document.getElementById("adProhibitedText");
+  const t = AD_SPECS_CONTENT[currentLang] || AD_SPECS_CONTENT.en;
+  if (specsEl) specsEl.innerHTML = `${t.img}<br>${t.vid}`;
+  if (prohibEl) prohibEl.innerHTML = `<b style="color:#f87171;">${t.prohib_label}</b>${t.prohib_body}`;
+}
+
 function renderRules() {
   const body = document.getElementById("rulesModalBody");
   if (!body) return;
@@ -1235,6 +1302,16 @@ function applyLanguage(lang) {
   if (wOpt2 && wOpt2.lastChild) wOpt2.lastChild.textContent = " " + translate("want_female");
 
   renderRules();
+  renderPrivacy();
+  renderAdSpecs();
+
+  // Названия опций в модалке страны (сами значения countryMap фиксированы,
+  // myCountry тут не участвует — трогать её тут небезопасно, см. selectLanguage)
+  const countryMap = { cOpt1: "ru", cOpt2: "en", cOpt3: "de", cOpt4: "tr", cOpt5: "es" };
+  for (const [id, code] of Object.entries(countryMap)) {
+    const el = document.getElementById(id);
+    if (el && el.lastChild) el.lastChild.textContent = " " + countryName(code);
+  }
 }
 
 function detectInitialLanguage() {
@@ -1260,11 +1337,13 @@ function closeLangModal(e) {
 }
 function selectLanguage(code) {
   applyLanguage(code);
-  // Пол/премиум уже могли быть выбраны раньше и держат текст на старом языке —
-  // перерисовываем их тоже. Безопасно вызывать именно тут (не при первой
-  // автозагрузке) — к моменту клика пользователя весь скрипт уже выполнился.
+  // Пол/премиум/страна уже могли быть выбраны раньше и держат текст на старом
+  // языке — перерисовываем их тоже. Безопасно вызывать именно тут (не при
+  // первой автозагрузке) — к моменту клика пользователя весь скрипт уже выполнился.
   if (typeof applyGender === "function") applyGender(myGender);
   if (typeof applyPremiumUI === "function") applyPremiumUI(myPremium);
+  const countryLabelEl = document.getElementById("countryLabel");
+  if (countryLabelEl) countryLabelEl.textContent = countryName(myCountry);
   document.getElementById("langModal").hidden = true;
 }
 
@@ -2153,7 +2232,7 @@ function applyCountry(code) {
   myCountry = code;
   const opt = COUNTRY_OPTIONS[code] || COUNTRY_OPTIONS[null];
   document.getElementById("countryEmoji").textContent = opt.emoji;
-  document.getElementById("countryLabel").textContent = opt.label;
+  document.getElementById("countryLabel").textContent = countryName(code);
   // Подсветка выбранного в модалке
   Object.values(COUNTRY_OPTIONS).forEach(o => {
     document.getElementById(o.id)?.classList.remove("selected");
