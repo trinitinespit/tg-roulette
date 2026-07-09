@@ -446,6 +446,45 @@ html, body {
   display: flex; align-items: center; justify-content: center;
 }
 .btn-icon:active { opacity: 0.7; }
+.btn-icon-danger {
+  background: rgba(255,59,48,0.16);
+  color: #FF6B60;
+}
+
+/* Подсказки при наведении курсором — только на устройствах с реальным hover
+   (десктоп), на тач-экранах не мешают. Текст берём из title, чтобы подсказка
+   сама переводилась вместе с остальным интерфейсом. */
+@media (hover: hover) and (pointer: fine) {
+  .btn-icon[title] { position: relative; }
+  .btn-icon[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.85);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 9px;
+    border-radius: 6px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 100001;
+  }
+  .btn-icon[title]:hover::before {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(0,0,0,0.85);
+    margin-bottom: 3px;
+    pointer-events: none;
+    z-index: 100001;
+  }
+}
 
 /* Живая лента сообщений поверх видео — как в Instagram Live.
    Всегда видна во время звонка, новые сообщения дописываются снизу,
@@ -782,7 +821,9 @@ html, body {
         <span id="btnNextText">Дальше</span>
       </button>
       <!-- Стоп: прерывает и поиск, и сам звонок, возвращает на главный экран -->
-      <button class="btn-icon" id="btnStop" title="Стоп" onclick="stopSearchAndGoHome()">⏹</button>
+      <button class="btn-icon btn-icon-danger" id="btnStop" title="Стоп" onclick="stopSearchAndGoHome()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+      </button>
       <!-- Блок -->
       <button class="btn-icon" id="btnBlock" title="Заблокировать" onclick="doBlock()">🚫</button>
     </div>
@@ -1523,6 +1564,13 @@ function pickCustomAd(type) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+// Один случайный показ раз в SKIPS_PER_AD переключений — картинка и видео
+// в общем пуле, тип не имеет значения, шанс показа одинаковый у обоих.
+function pickAnyCustomAd() {
+  if (!customAds.length) return null;
+  return customAds[Math.floor(Math.random() * customAds.length)];
+}
+
 function trackAdEvent(adId, type) {
   fetch("/ad-event", {
     method: "POST",
@@ -1757,11 +1805,12 @@ function doFind() {
   }
   skipsSinceAd = 0;
 
-  // Приоритет — собственная реклама из админки. Показываем её поверх поиска:
-  // поиск стартует сразу и идёт параллельно, а если собеседник найдётся
-  // раньше, чем закончится таймер — подключение отложится до конца показа
-  // (см. pendingMatchData в socket.on("matched")), реклама не прерывается.
-  const customAd = pickCustomAd("video") || pickCustomAd("image");
+  // Раз в SKIPS_PER_AD переключений показываем ОДНО объявление, выбранное
+  // случайно из общего пула картинок и видео (не приоритет видео, не оба
+  // подряд — просто рандом). Поиск идёт параллельно в фоне; если собеседник
+  // найдётся раньше — подключение отложится до конца показа (см.
+  // pendingMatchData в socket.on("matched")), реклама не прерывается.
+  const customAd = pickAnyCustomAd();
   if (customAd) {
     adWatchActive = true;
     socket.emit("find");
@@ -2109,7 +2158,7 @@ function selectAdPayment(method) {
 // Цены — те же плейсхолдеры, что и в index.js (AD_PRICE_PER_1000_STARS/TON).
 // Если поменяете их на сервере, поправьте и тут для верного превью.
 const AD_PRICE_PER_1000_STARS_CLIENT = 500;
-const AD_PRICE_PER_1000_TON_CLIENT = 0.4;
+const AD_PRICE_PER_1000_TON_CLIENT = 4;
 
 function updateAdPricePreview() {
   const impressions = parseInt(document.getElementById("adFormImpressions").value, 10);

@@ -22,7 +22,10 @@ const app = express();
 // сама, как только исчерпан оплаченный лимит показов (см. /ad-event).
 const AD_MIN_IMPRESSIONS = 1000;
 const AD_PRICE_PER_1000_STARS = 500; // ⭐ за 1000 показов
-const AD_PRICE_PER_1000_TON = 0.4;   // TON за 1000 показов
+// Эквивалент Stars по курсу на момент настройки (Stars ≈ $0.013, TON ≈ $1.65).
+// Курс TON плавающий — время от времени сверяйте и поправляйте это число,
+// чтобы не расходилось слишком сильно с ценой в Stars.
+const AD_PRICE_PER_1000_TON = 4;     // TON за 1000 показов
 const TON_WALLET_ADDRESS = process.env.TON_WALLET_ADDRESS || ""; // ваш адрес для приёма оплаты
 const ADMIN_TG_ID = process.env.ADMIN_TG_ID || ""; // куда слать уведомления о новых заявках на рекламу
 const server = http.createServer(app);
@@ -465,6 +468,9 @@ app.post("/create-invoice", async (req, res) => {
 
   if (!botToken) return res.status(500).json({ error: "BOT_TOKEN не задан" });
   if (!telegramId) return res.status(400).json({ error: "telegramId обязателен" });
+  if (isRateLimited("http:" + telegramId, "create-invoice", 8, 60000)) {
+    return res.status(429).json({ error: "Слишком много попыток, подождите немного" });
+  }
 
   const PRODUCTS = {
     premium_30: {
@@ -1544,6 +1550,9 @@ app.post("/submit-ad", async (req, res) => {
   const { telegramId, type, mediaUrl, linkUrl, title, paymentMethod, impressions } = req.body;
 
   if (!telegramId) return res.status(400).json({ error: "telegramId обязателен" });
+  if (isRateLimited("http:" + telegramId, "submit-ad", 5, 60000)) {
+    return res.status(429).json({ error: "Слишком много заявок подряд, подождите немного" });
+  }
   if (!mediaUrl) return res.status(400).json({ error: "Укажите ссылку на картинку/видео" });
   if (!["image", "video"].includes(type)) return res.status(400).json({ error: "Неверный тип" });
   if (!["stars", "ton"].includes(paymentMethod)) return res.status(400).json({ error: "Выберите способ оплаты" });
@@ -1715,6 +1724,32 @@ function trackCallsPeak() {
   }
 }
 const bannedSockets = new Set(); // сокеты забаненных юзеров — оставляем на связи, чтобы могли оплатить разбан
+
+// ---------- Rate limiting ----------
+// Простой rate limiter с фиксированным окном, ключ — "socketId:событие".
+// Не защищает от смены socket.id (переподключения), но закрывает основной
+// случай — спам одним и тем же клиентом в рамках одной сессии.
+const rateLimitState = new Map(); // "socketId:event" -> { count, windowStart }
+
+function isRateLimited(socketId, eventName, maxCount, windowMs) {
+  const key = `${socketId}:${eventName}`;
+  const now = Date.now();
+  const entry = rateLimitState.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitState.set(key, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count++;
+  return entry.count > maxCount;
+}
+
+// Чистим все лимиты этого сокета при отключении, чтобы Map не росла бесконечно
+function clearRateLimits(socketId) {
+  for (const key of rateLimitState.keys()) {
+    if (key.startsWith(socketId + ":")) rateLimitState.delete(key);
+  }
+}
+
 const telegramUserOf = new Map();
 
 // Очереди ожидания: язык -> socketId (один ожидающий на язык)
@@ -1924,6 +1959,10 @@ io.on("connection", (socket) => {
 
   // Покупка премиума — сервер шлёт инвойс в личку через Telegram Bot API
   socket.on("buy-premium", async ({ product }) => {
+    if (isRateLimited(socket.id, "buy-premium", 5, 60000)) {
+      socket.emit("error-msg", "Слишком много попыток, подождите немного");
+      return;
+    }
     const tgId = telegramUserOf.get(socket.id)?.id;
     if (!tgId) {
       socket.emit("error-msg", "Откройте приложение через Telegram для покупки премиума");
@@ -1964,6 +2003,10 @@ io.on("connection", (socket) => {
 
   // Разблокировка за Stars
   socket.on("buy-unban", async () => {
+    if (isRateLimited(socket.id, "buy-unban", 5, 60000)) {
+      socket.emit("error-msg", "Слишком много попыток, подождите немного");
+      return;
+    }
     const tgId = telegramUserOf.get(socket.id)?.id;
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -1995,6 +2038,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("find", async () => {    console.log("[find]", socket.id);
+    if (isRateLimited(socket.id, "find", 8, 3000)) return; // не больше 8 раз за 3с
     if (!telegramUserOf.has(socket.id)) {
       socket.emit("need-telegram-auth");
       return;
@@ -2007,6 +2051,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("skip", async () => {
+    if (isRateLimited(socket.id, "skip", 8, 3000)) return;
     console.log("[skip]", socket.id);
     clearMatch(socket.id, "skip");
     removeFromQueues(socket.id);
@@ -2022,6 +2067,7 @@ io.on("connection", (socket) => {
 
   // Пользователь блокирует текущего собеседника — они больше не будут мэтчиться
   socket.on("block", async () => {
+    if (isRateLimited(socket.id, "block", 5, 60000)) return; // не больше 5 в минуту
     const partnerId = partners.get(socket.id);
     const blockerTgId = telegramUserOf.get(socket.id)?.id ?? null;
     const blockedTgId = telegramUserOf.get(partnerId)?.id ?? null;
@@ -2039,6 +2085,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("report", async ({ imageBase64 }) => {
+    if (isRateLimited(socket.id, "report", 4, 60000)) { // не больше 4 жалоб в минуту — Sightengine платный
+      socket.emit("error-msg", "Слишком много жалоб подряд, подождите немного");
+      return;
+    }
     const partnerId = partners.get(socket.id);
     console.log("[report] от", socket.id, "| партнёр:", partnerId);
 
@@ -2146,6 +2196,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("reaction", ({ emoji }) => {
+    if (isRateLimited(socket.id, "reaction", 20, 10000)) return; // не больше 20 за 10с
     const room = roomOf.get(socket.id);
     console.log("[reaction]", socket.id, "->", emoji, "| roomOf:", room, "| partners:", partners.get(socket.id));
     if (!room) {
@@ -2156,6 +2207,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("chat-message", ({ text }) => {
+    if (isRateLimited(socket.id, "chat-message", 15, 10000)) return; // не больше 15 сообщений за 10с
     if (bannedSockets.has(socket.id)) return;
 
     const room = roomOf.get(socket.id);
@@ -2173,6 +2225,7 @@ io.on("connection", (socket) => {
     telegramUserOf.delete(socket.id);
     userFilters.delete(socket.id);
     bannedSockets.delete(socket.id);
+    clearRateLimits(socket.id);
     clearMatch(socket.id, "disconnect:" + reason);
   });
 });
