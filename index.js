@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { Pool } = require("pg");
 const { Server } = require("socket.io");
+const maxmind = require("maxmind");
 
 console.log("[env] BOT_TOKEN:", process.env.TELEGRAM_BOT_TOKEN ? "SET" : "NOT SET");
 console.log("[env] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
@@ -13,6 +14,41 @@ console.log("[env] TURN_HOST:", process.env.TURN_HOST ? `SET (${process.env.TURN
 console.log("[env] TURN_SECRET:", process.env.TURN_SECRET ? "SET" : "NOT SET");
 console.log("[env] SIGHTENGINE_API_USER:", process.env.SIGHTENGINE_API_USER ? "SET" : "NOT SET");
 console.log("[env] SIGHTENGINE_API_SECRET:", process.env.SIGHTENGINE_API_SECRET ? "SET" : "NOT SET");
+
+// ---------- GeoIP (определение страны по IP через MaxMind GeoLite2) ----------
+// Используем geolite2-redist — он сам скачивает базу с GitHub в фоне при
+// первом запуске, БЕЗ регистрации на сайте MaxMind и без лицензионного ключа.
+// Первый старт сервера может занять чуть дольше (качается файл), дальше —
+// быстро, база кешируется на диске. Без сети наружу (например, если хостинг
+// блокирует исходящие запросы к GitHub) база не скачается, и поиск по стране
+// тихо отключится — сервер при этом не упадёт.
+const geolite2 = require("geolite2-redist");
+let geoLookup = null;
+
+(async () => {
+  try {
+    geoLookup = await geolite2.open("GeoLite2-Country", (dbPath) => maxmind.open(dbPath));
+    console.log("[geoip] база GeoLite2-Country загружена (geolite2-redist)");
+  } catch (e) {
+    console.warn("[geoip] не удалось загрузить базу (" + e.message + ") — поиск по странам работать не будет");
+  }
+})();
+
+function getClientIp(socket) {
+  const forwarded = socket.handshake.headers["x-forwarded-for"];
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return socket.handshake.address;
+}
+
+function getCountryFromIp(ip) {
+  if (!geoLookup || !ip) return null;
+  try {
+    const result = geoLookup.get(ip);
+    return result?.country?.iso_code || null;
+  } catch (e) {
+    return null;
+  }
+}
 
 const app = express();
 
@@ -1759,6 +1795,21 @@ let waitingAny = null;           // fallback-очередь (любой язык
 const LANG_TIMEOUT = 10000;      // 10 сек ждём своего языка, потом расширяем
 const langFallbackTimers = new Map(); // socketId -> timer
 
+// Страна пользователя, определённая по IP через GeoIP (не зависит от языка
+// Telegram — так можно отличить, например, США от Британии, чего язык не может).
+const countryOf = new Map(); // socketId -> ISO-код страны ('US','GB','RU',...) | null
+
+// Если пользователь явно выбрал фильтр «искать только эту страну» — храним тут.
+// Если фильтр не выбран (null/весь мир) — матчинг идёт как раньше, по языку.
+const preferredCountryOf = new Map(); // socketId -> ISO-код страны | null
+
+// Очередь ожидания по фактической стране (не по предпочтению!) — сюда попадает
+// КАЖДЫЙ ожидающий, у кого определилась страна, независимо от того, искал ли он
+// сам по стране. Так его может найти кто-то другой, кто ищет именно его страну.
+const waitingByCountry = new Map(); // ISO-код страны -> socketId
+const COUNTRY_TIMEOUT = 10000;      // 10 сек ждём свою страну, потом — рандом
+const countryFallbackTimers = new Map(); // socketId -> timer
+
 // Фильтры и статусы пользователей на время сессии
 // { gender, wantGender, premium }
 const userFilters = new Map();
@@ -1773,6 +1824,11 @@ function removeFromQueues(socketId) {
   if (waitingAny === socketId) waitingAny = null;
   const t = langFallbackTimers.get(socketId);
   if (t) { clearTimeout(t); langFallbackTimers.delete(socketId); }
+
+  const country = countryOf.get(socketId);
+  if (country && waitingByCountry.get(country) === socketId) waitingByCountry.delete(country);
+  const ct = countryFallbackTimers.get(socketId);
+  if (ct) { clearTimeout(ct); countryFallbackTimers.delete(socketId); }
 }
 
 function clearMatch(socketId, reason = "unknown") {
@@ -1791,6 +1847,17 @@ function clearMatch(socketId, reason = "unknown") {
 // ---------- Socket.IO ----------
 io.on("connection", (socket) => {
   console.log("[connect]", socket.id);
+
+  const clientIp = getClientIp(socket);
+  const country = getCountryFromIp(clientIp);
+  countryOf.set(socket.id, country);
+  console.log("[geoip]", socket.id, "| ip:", clientIp, "| страна:", country || "не определена");
+
+  socket.on("set-country-filter", ({ country: preferred }) => {
+    if (isRateLimited(socket.id, "set-country-filter", 10, 10000)) return;
+    preferredCountryOf.set(socket.id, preferred || null);
+    console.log("[country-filter]", socket.id, "| фильтр:", preferred || "весь мир");
+  });
 
   socket.on("auth", async (data) => {
     let user = verifyTelegramInitData(data?.initData, process.env.TELEGRAM_BOT_TOKEN);
@@ -1881,10 +1948,12 @@ io.on("connection", (socket) => {
 
     const langA = getLang(a) || "any";
     const langB = getLang(b) || "any";
-    console.log("[match]", a, `(${langA})`, "<->", b, `(${langB})`);
+    const countryA = countryOf.get(a) || null;
+    const countryB = countryOf.get(b) || null;
+    console.log("[match]", a, `(${langA}, ${countryA || "??"})`, "<->", b, `(${langB}, ${countryB || "??"})`);
 
-    io.to(a).emit("matched", { room, initiator: true, partnerLang: langB === "any" ? null : langB });
-    io.to(b).emit("matched", { room, initiator: false, partnerLang: langA === "any" ? null : langA });
+    io.to(a).emit("matched", { room, initiator: true, partnerCountry: countryB });
+    io.to(b).emit("matched", { room, initiator: false, partnerCountry: countryA });
     return true;
   }
 
@@ -1895,6 +1964,46 @@ io.on("connection", (socket) => {
     try {
       const myId = socket.id;
       const myLang = getLang(myId);
+      const myActualCountry = countryOf.get(myId) || null;
+      const myPreferredCountry = preferredCountryOf.get(myId) || null;
+
+      // 0) Явно выбран фильтр по стране — ищем СТРОГО среди тех, кто реально
+      // из этой страны (не по их предпочтениям, по факту GeoIP). Если никого
+      // нет — ждём ровно COUNTRY_TIMEOUT, потом падаем в общую очередь (как
+      // договаривались), не проверяя waitingAny раньше времени.
+      if (myPreferredCountry) {
+        if (waitingByCountry.has(myPreferredCountry)) {
+          const candidate = waitingByCountry.get(myPreferredCountry);
+          if (candidate !== myId && io.sockets.sockets.has(candidate)) {
+            waitingByCountry.delete(myPreferredCountry);
+            removeFromQueues(candidate);
+            const matched = await doMatch(candidate, myId);
+            if (matched) return;
+          } else {
+            waitingByCountry.delete(myPreferredCountry);
+          }
+        }
+
+        // Не нашли — встаём в очередь СВОЕЙ фактической страны (чтобы нас
+        // нашли те, кто ищет именно её), и запускаем таймер фоллбэка.
+        if (myActualCountry && !waitingByCountry.has(myActualCountry)) {
+          waitingByCountry.set(myActualCountry, myId);
+        }
+        console.log("[waiting]", myId, "| country filter:", myPreferredCountry, "| моя страна:", myActualCountry || "??");
+
+        const ct = setTimeout(() => {
+          if (myActualCountry && waitingByCountry.get(myActualCountry) === myId) {
+            waitingByCountry.delete(myActualCountry);
+          }
+          if (!waitingAny) {
+            waitingAny = myId;
+            console.log("[waiting→any]", myId, "| country timeout, переходим в общую очередь");
+          }
+          countryFallbackTimers.delete(myId);
+        }, COUNTRY_TIMEOUT);
+        countryFallbackTimers.set(myId, ct);
+        return;
+      }
 
       // 1) Ищем собеседника того же языка
       if (myLang && waitingByLang.has(myLang)) {
@@ -1918,7 +2027,9 @@ io.on("connection", (socket) => {
         if (matched) return;
       }
 
-      // 3) Никого не нашли — встаём в очередь своего языка
+      // 3) Никого не нашли — встаём в очередь своего языка (и заодно своей
+      // фактической страны — чтобы нас мог найти кто-то, кто выбрал фильтр
+      // именно по нашей стране, даже если сами мы фильтр не выбирали)
       if (myLang) {
         waitingByLang.set(myLang, myId);
         console.log("[waiting]", myId, "| lang:", myLang);
@@ -1939,6 +2050,10 @@ io.on("connection", (socket) => {
         // Язык неизвестен — сразу в общую очередь
         waitingAny = myId;
         console.log("[waiting]", myId, "| lang: unknown → общая очередь");
+      }
+
+      if (myActualCountry && !waitingByCountry.has(myActualCountry)) {
+        waitingByCountry.set(myActualCountry, myId);
       }
     } finally {
       matchLock = false;
@@ -2226,6 +2341,8 @@ io.on("connection", (socket) => {
     userFilters.delete(socket.id);
     bannedSockets.delete(socket.id);
     clearRateLimits(socket.id);
+    countryOf.delete(socket.id);
+    preferredCountryOf.delete(socket.id);
     clearMatch(socket.id, "disconnect:" + reason);
   });
 });
