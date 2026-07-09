@@ -262,6 +262,25 @@ html, body {
 }
 .local-premium-badge.visible { display: inline-flex; }
 
+.partner-country-badge {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 200px);
+  left: 12px;
+  z-index: 8;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 999px;
+  display: none;
+  align-items: center;
+  gap: 5px;
+}
+.partner-country-badge.visible { display: inline-flex; }
+
 /* Статус поиска поверх чёрного */
 .search-overlay {
   position: absolute; inset: 0;
@@ -659,7 +678,7 @@ html, body {
     </button>
 
     <p class="disclaimer">
-      Используя видеочат, вы соглашаетесь с <span id="rulesLink" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span>.<br>
+      Используя видеочат, вы соглашаетесь с <span id="rulesLink" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span> и <span onclick="openPrivacyModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">политикой конфиденциальности</span>.<br>
       Нарушители будут заблокированы.
     </p>
 
@@ -672,6 +691,7 @@ html, body {
   <video id="remoteVideo" autoplay playsinline></video>
   <video id="localVideo" autoplay muted playsinline></video>
   <div class="local-premium-badge" id="localPremiumBadge">⭐ PREMIUM</div>
+  <div class="partner-country-badge" id="partnerCountryBadge"></div>
 
   
   <!-- Поверх видео во время поиска -->
@@ -786,6 +806,22 @@ html, body {
   </div>
 </div>
 
+<!-- Попап политики конфиденциальности -->
+<div class="modal-backdrop" id="privacyModal" hidden onclick="closePrivacyModal(event)">
+  <div class="modal-sheet" style="max-height:80vh;overflow-y:auto;">
+    <div class="modal-title">Политика конфиденциальности</div>
+    <div style="font-size:13px;line-height:1.7;color:#cbd5e1;">
+      <p style="margin-bottom:10px;"><b style="color:#fff;">Какие данные мы собираем:</b> ваш Telegram ID, имя пользователя, язык интерфейса, пол (если указали) и статус Premium. Видео и аудио во время звонков передаются напрямую между вами и собеседником (peer-to-peer) или через TURN-сервер-ретранслятор и не записываются нами.</p>
+      <p style="margin-bottom:10px;"><b style="color:#fff;">Скриншоты при жалобах:</b> если вы или ваш собеседник нажимаете «Пожаловаться», делается один кадр с видео для автоматической и, при необходимости, ручной проверки на нарушение правил. Хранится вместе с записью о жалобе.</p>
+      <p style="margin-bottom:10px;"><b style="color:#fff;">Платежи:</b> обрабатываются через Telegram Stars или TON — мы не храним данные ваших банковских карт.</p>
+      <p style="margin-bottom:10px;"><b style="color:#fff;">Кому передаются данные:</b> стороннему сервису модерации контента (Sightengine) — только кадр из жалобы, для проверки на нарушения. Больше третьим лицам данные не передаются и не продаются.</p>
+      <p style="margin-bottom:10px;"><b style="color:#fff;">Хранение:</b> данные хранятся, пока у вас есть аккаунт. Вы можете запросить удаление данных, написав в поддержку через бота.</p>
+      <p style="color:#9AB2CC;font-size:12px;">Используя Spinny, вы соглашаетесь с этой политикой. Мы можем обновлять её — актуальная версия всегда доступна в этом окне.</p>
+    </div>
+    <button class="btn-start" style="margin-top:16px;" onclick="document.getElementById('privacyModal').hidden=true;">Понятно</button>
+  </div>
+</div>
+
 <!-- Попап покупки премиума -->
 <div class="modal-backdrop" id="premiumModal" hidden onclick="closePremiumModal(event)">
   <div class="modal-sheet">
@@ -847,20 +883,37 @@ html, body {
   <div class="modal-sheet" id="advertiseFormSheet">
     <div class="modal-title">📢 Разместить рекламу</div>
     <div style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
-      Ваша реклама покажется в приложении на 7 дней после проверки модератором
+      Реклама показывается до исчерпания оплаченного пакета показов, после проверки модератором
     </div>
 
     <select id="adFormType" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;">
       <option value="image" style="color:#000;">🖼️ Картинка (между звонками)</option>
       <option value="video" style="color:#000;">🎬 Видео (во время поиска)</option>
     </select>
-    <input type="text" id="adFormMediaUrl" placeholder="Ссылка на картинку/видео" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;"/>
+    <input type="text" id="adFormMediaUrl" placeholder="Ссылка на картинку/видео" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:6px;"/>
+    <div style="font-size:11px;color:#6f8bb0;margin-bottom:10px;line-height:1.5;">
+      Картинка: 1080×608px (16:9) или 1080×1080px (1:1), JPEG/PNG/WebP, до 500КБ.<br>
+      Видео: 1080×1920px (9:16, вертикальное), MP4/H.264, до 15 секунд.
+    </div>
     <input type="text" id="adFormLinkUrl" placeholder="Ссылка при клике (t.me/... или https://...)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;"/>
-    <input type="text" id="adFormTitle" placeholder="Название (для себя, необязательно)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:14px;"/>
+    <input type="text" id="adFormTitle" placeholder="Название (для себя, необязательно)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;"/>
+
+    <select id="adFormImpressions" onchange="updateAdPricePreview()" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;">
+      <option value="1000" style="color:#000;">1 000 показов</option>
+      <option value="5000" style="color:#000;">5 000 показов</option>
+      <option value="10000" style="color:#000;">10 000 показов</option>
+      <option value="50000" style="color:#000;">50 000 показов</option>
+      <option value="100000" style="color:#000;">100 000 показов</option>
+    </select>
+    <div id="adPricePreview" style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;"></div>
 
     <div style="display:flex;gap:8px;margin-bottom:14px;">
       <button class="modal-option" id="adPayStarsBtn" style="flex:1;justify-content:center;" onclick="selectAdPayment('stars')">⭐ Stars</button>
       <button class="modal-option" id="adPayTonBtn" style="flex:1;justify-content:center;" onclick="selectAdPayment('ton')">💎 TON</button>
+    </div>
+
+    <div style="font-size:11px;color:#6f8bb0;background:rgba(255,255,255,0.04);border-radius:10px;padding:10px 12px;margin-bottom:14px;line-height:1.6;">
+      <b style="color:#f87171;">Запрещено рекламировать:</b> наркотики и психоактивные вещества, порнографию и сексуальные услуги, оружие, поддельные документы, мошеннические/пирамидальные схемы, контент для несовершеннолетних. Заявки с таким содержанием будут <b>отклонены без возврата средств</b>. Гемблинг/беттинг — только при наличии лицензии, укажите её в названии заявки.
     </div>
 
     <button class="btn-premium" id="adSubmitBtn" onclick="submitAd()" style="width:100%;">
@@ -1383,6 +1436,16 @@ function finalizeMatch(data) {
   searchOverlay.hidden = true;
   btnNext.disabled = false;
   clearChatMessages();
+
+  const badge = document.getElementById("partnerCountryBadge");
+  const info = data.partnerLang ? LANG_TO_COUNTRY[data.partnerLang] : null;
+  if (info) {
+    badge.textContent = `${info.emoji} ${info.label}`;
+    badge.classList.add("visible");
+  } else {
+    badge.classList.remove("visible");
+  }
+
   try {
     createPeer(data.initiator);
   } catch (e) {
@@ -1618,6 +1681,23 @@ function selectAdPayment(method) {
   adSelectedPayment = method;
   document.getElementById("adPayStarsBtn").classList.toggle("selected", method === "stars");
   document.getElementById("adPayTonBtn").classList.toggle("selected", method === "ton");
+  updateAdPricePreview();
+}
+
+// Цены — те же плейсхолдеры, что и в index.js (AD_PRICE_PER_1000_STARS/TON).
+// Если поменяете их на сервере, поправьте и тут для верного превью.
+const AD_PRICE_PER_1000_STARS_CLIENT = 500;
+const AD_PRICE_PER_1000_TON_CLIENT = 0.4;
+
+function updateAdPricePreview() {
+  const impressions = parseInt(document.getElementById("adFormImpressions").value, 10);
+  const packs = impressions / 1000;
+  const preview = document.getElementById("adPricePreview");
+  if (adSelectedPayment === "ton") {
+    preview.textContent = `≈ ${(packs * AD_PRICE_PER_1000_TON_CLIENT).toFixed(2)} TON за ${impressions.toLocaleString('ru')} показов`;
+  } else {
+    preview.textContent = `≈ ${Math.round(packs * AD_PRICE_PER_1000_STARS_CLIENT)} ⭐ за ${impressions.toLocaleString('ru')} показов`;
+  }
 }
 
 async function submitAd() {
@@ -1625,6 +1705,7 @@ async function submitAd() {
   const mediaUrl = document.getElementById("adFormMediaUrl").value.trim();
   const linkUrl = document.getElementById("adFormLinkUrl").value.trim();
   const title = document.getElementById("adFormTitle").value.trim();
+  const impressions = parseInt(document.getElementById("adFormImpressions").value, 10);
 
   if (!mediaUrl) return showError("Укажите ссылку на картинку/видео");
   if (!adSelectedPayment) return showError("Выберите способ оплаты");
@@ -1638,7 +1719,7 @@ async function submitAd() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        telegramId: myTelegramId, type, mediaUrl, linkUrl, title,
+        telegramId: myTelegramId, type, mediaUrl, linkUrl, title, impressions,
         paymentMethod: adSelectedPayment,
       }),
     });
@@ -1743,6 +1824,22 @@ const COUNTRY_OPTIONS = {
   es:    { emoji: "🇪🇸", label: "España",      id: "cOpt5" },
 };
 
+// Расширенная карта язык → флаг+название, используется только для отображения
+// страны собеседника во время звонка (не для фильтра на главном экране)
+const LANG_TO_COUNTRY = {
+  ru: { emoji: "🇷🇺", label: "Россия" },
+  en: { emoji: "🇺🇸", label: "English" },
+  de: { emoji: "🇩🇪", label: "Deutschland" },
+  tr: { emoji: "🇹🇷", label: "Türkiye" },
+  es: { emoji: "🇪🇸", label: "España" },
+  it: { emoji: "🇮🇹", label: "Italia" },
+  zh: { emoji: "🇨🇳", label: "中国" },
+  ar: { emoji: "🇸🇦", label: "العربية" },
+  hi: { emoji: "🇮🇳", label: "भारत" },
+  ja: { emoji: "🇯🇵", label: "日本" },
+  fr: { emoji: "🇫🇷", label: "France" },
+};
+
 let myCountry = null;
 
 // Автоопределение языка — сначала из Telegram, потом из браузера
@@ -1788,6 +1885,14 @@ function openRulesModal() {
 function closeRulesModal(e) {
   if (e.target === document.getElementById("rulesModal"))
     document.getElementById("rulesModal").hidden = true;
+}
+
+function openPrivacyModal() {
+  document.getElementById("privacyModal").hidden = false;
+}
+function closePrivacyModal(e) {
+  if (e.target === document.getElementById("privacyModal"))
+    document.getElementById("privacyModal").hidden = true;
 }
 
 // ─── Реакции ─────────────────────────────────────────────

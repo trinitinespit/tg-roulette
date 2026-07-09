@@ -18,10 +18,11 @@ const app = express();
 
 // ---------- Self-service реклама: цены и настройки ----------
 // ВАЖНО: цены — плейсхолдеры, поменяйте под свою модель монетизации.
-// Срок размещения после одобрения — 7 дней, дальше объявление гаснет само (см. expireOldAds()).
-const AD_SLOT_DAYS = 7;
-const AD_SLOT_PRICE_STARS = 5000; // ⭐ за AD_SLOT_DAYS дней размещения
-const AD_SLOT_PRICE_TON = 3;      // TON за AD_SLOT_DAYS дней размещения
+// Реклама тарифицируется за пакеты по 1000 показов, а не за дни — гаснет
+// сама, как только исчерпан оплаченный лимит показов (см. /ad-event).
+const AD_MIN_IMPRESSIONS = 1000;
+const AD_PRICE_PER_1000_STARS = 500; // ⭐ за 1000 показов
+const AD_PRICE_PER_1000_TON = 0.4;   // TON за 1000 показов
 const TON_WALLET_ADDRESS = process.env.TON_WALLET_ADDRESS || ""; // ваш адрес для приёма оплаты
 const ADMIN_TG_ID = process.env.ADMIN_TG_ID || ""; // куда слать уведомления о новых заявках на рекламу
 const server = http.createServer(app);
@@ -101,6 +102,17 @@ async function initDb() {
       clicks        INTEGER NOT NULL DEFAULT 0,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS transactions (
+      id            SERIAL PRIMARY KEY,
+      category      TEXT NOT NULL,  -- 'premium' | 'donate' | 'unban' | 'ad_slot'
+      telegram_id   BIGINT,
+      amount        NUMERIC NOT NULL,
+      currency      TEXT NOT NULL DEFAULT 'XTR', -- 'XTR' (Stars) | 'TON'
+      description   TEXT,
+      charge_id     TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 
   // Миграции — добавляем колонки если их нет (безопасно для существующих таблиц)
@@ -118,6 +130,7 @@ async function initDb() {
     ALTER TABLE ads ADD COLUMN IF NOT EXISTS payment_amount NUMERIC;
     ALTER TABLE ads ADD COLUMN IF NOT EXISTS ton_comment TEXT;   -- уникальный комментарий для сверки TON-платежа
     ALTER TABLE ads ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    ALTER TABLE ads ADD COLUMN IF NOT EXISTS impression_limit INTEGER;
     ALTER TABLE ads ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
   `).catch(e => console.warn("[db] миграция users:", e.message));
 
@@ -216,6 +229,18 @@ async function revokePremium(telegramId) {
     [telegramId]
   );
   console.log("[premium] отозван у пользователя", telegramId);
+}
+
+async function logTransaction({ category, telegramId, amount, currency = "XTR", description, chargeId }) {
+  if (!db) return;
+  try {
+    await db.query(
+      "INSERT INTO transactions (category, telegram_id, amount, currency, description, charge_id) VALUES ($1,$2,$3,$4,$5,$6)",
+      [category, telegramId || null, amount, currency, description || null, chargeId || null]
+    );
+  } catch (e) {
+    console.error("[transactions] ошибка записи:", e.message);
+  }
 }
 
 // Уведомляет админа в личку боту о новой оплаченной заявке на рекламу,
@@ -597,6 +622,7 @@ app.post("/tg-webhook", async (req, res) => {
 
     if (product === "unban") {
       await unbanUser(telegramId, chargeId, payment.total_amount);
+      await logTransaction({ category: "unban", telegramId, amount: payment.total_amount, currency: "XTR", description: "Разблокировка аккаунта", chargeId });
 
       // Уведомляем клиента если онлайн
       for (const [sockId, user] of telegramUserOf.entries()) {
@@ -620,6 +646,7 @@ app.post("/tg-webhook", async (req, res) => {
 
     if (product === "donate") {
       console.log("[donate] получен донат от", telegramId, "| Stars:", payment.total_amount, "| charge:", chargeId);
+      await logTransaction({ category: "donate", telegramId, amount: payment.total_amount, currency: "XTR", description: "Донат", chargeId });
 
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
@@ -635,6 +662,7 @@ app.post("/tg-webhook", async (req, res) => {
     if (product === "ad_slot") {
       const adId = payload.split(":")[1];
       console.log("[ad_slot] оплата получена, заявка #", adId, "| Stars:", payment.total_amount);
+      await logTransaction({ category: "ad_slot", telegramId, amount: payment.total_amount, currency: "XTR", description: "Реклама, заявка #" + adId, chargeId });
 
       if (db) {
         try {
@@ -662,6 +690,7 @@ app.post("/tg-webhook", async (req, res) => {
     const days = product === "premium_90" ? 90 : 30;
 
     await grantPremium(telegramId, days);
+    await logTransaction({ category: "premium", telegramId, amount: payment.total_amount, currency: "XTR", description: `Premium на ${days} дней`, chargeId });
 
     // Уведомляем клиента если он сейчас онлайн
     for (const [sockId, user] of telegramUserOf.entries()) {
@@ -697,7 +726,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   if (!db) return res.status(503).send("БД недоступна");
 
   try {
-    const [bans, reports, users, unban, blocks, ads] = await Promise.all([
+    const [bans, reports, users, unban, blocks, ads, transactions] = await Promise.all([
     db.query(`SELECT b.telegram_id, b.reason, b.banned_at,
               u.username, u.first_name
               FROM bans b LEFT JOIN users u ON u.telegram_id = b.telegram_id
@@ -721,7 +750,51 @@ app.get("/admin", adminAuth, async (req, res) => {
               LEFT JOIN users ou ON ou.telegram_id = bl.blocked_tg_id
               ORDER BY bl.created_at DESC LIMIT 200`),
     db.query(`SELECT * FROM ads ORDER BY created_at DESC LIMIT 100`),
+    db.query(`SELECT t.*, u.username FROM transactions t
+              LEFT JOIN users u ON u.telegram_id = t.telegram_id
+              ORDER BY t.created_at DESC LIMIT 300`),
   ]);
+
+  // Группируем доходы по категориям и валюте для круговых диаграмм
+  const CATEGORY_LABELS = { premium: 'Premium', donate: 'Донаты', unban: 'Разблокировки', ad_slot: 'Реклама', external_ads: 'Telegram Ads' };
+  const CATEGORY_COLORS = { premium: '#fbbf24', donate: '#f472b6', unban: '#22c55e', ad_slot: '#38bdf8', external_ads: '#a78bfa' };
+  function sumByCategory(rows, currency) {
+    const totals = {};
+    rows.filter(t => t.currency === currency).forEach(t => {
+      totals[t.category] = (totals[t.category] || 0) + Number(t.amount);
+    });
+    return totals;
+  }
+  const starsTotals = sumByCategory(transactions.rows, 'XTR');
+  const tonTotals = sumByCategory(transactions.rows, 'TON');
+  const starsGrandTotal = Object.values(starsTotals).reduce((a, b) => a + b, 0);
+  const tonGrandTotal = Object.values(tonTotals).reduce((a, b) => a + b, 0);
+
+  // Строим SVG-«пончик» без библиотек — просто круг с чередующимися stroke-dasharray сегментами
+  function buildDonutSvg(totals, grandTotal) {
+    if (!grandTotal) return '<div class="empty" style="padding:20px;">Пока пусто</div>';
+    const r = 60, circumference = 2 * Math.PI * r;
+    let offset = 0;
+    const segments = Object.entries(totals).map(([cat, amt]) => {
+      const frac = amt / grandTotal;
+      const dash = frac * circumference;
+      const seg = `<circle cx="80" cy="80" r="${r}" fill="none" stroke="${CATEGORY_COLORS[cat] || '#64748b'}"
+        stroke-width="22" stroke-dasharray="${dash} ${circumference - dash}"
+        stroke-dashoffset="${-offset}" transform="rotate(-90 80 80)"/>`;
+      offset += dash;
+      return seg;
+    }).join('');
+    return `<svg width="160" height="160" viewBox="0 0 160 160">${segments}</svg>`;
+  }
+  function buildLegend(totals, grandTotal, currencyLabel) {
+    return Object.entries(totals).sort((a,b) => b[1]-a[1]).map(([cat, amt]) => `
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:6px;">
+        <span style="width:10px;height:10px;border-radius:50%;background:${CATEGORY_COLORS[cat]||'#64748b'};display:inline-block;"></span>
+        <span style="flex:1;color:#cbd5e1;">${CATEGORY_LABELS[cat] || cat}</span>
+        <span style="color:#64748b;">${(amt/grandTotal*100).toFixed(0)}%</span>
+        <b>${cat === 'ad_slot' && currencyLabel==='TON' ? amt.toFixed(2) : Math.round(amt)} ${currencyLabel}</b>
+      </div>`).join('');
+  }
 
   // Считаем онлайн прямо из памяти сервера
   const onlineCount = telegramUserOf.size;
@@ -747,6 +820,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   .section.active { display: block; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
   .stat { background: #1e293b; border-radius: 12px; padding: 16px; text-align: center; }
+  .panel-card { background: #1e293b; border-radius: 12px; padding: 18px; flex: 1; min-width: 280px; }
   .stat-num { font-size: 28px; font-weight: 800; color: #38bdf8; }
   .stat-label { font-size: 11px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
   table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }
@@ -785,6 +859,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   <div class="tab" onclick="showTab('unbans')">Разблокировки (${unban.rowCount})</div>
   <div class="tab" onclick="showTab('blocks')">Блоки (${blocks.rowCount})</div>
   <div class="tab" onclick="showTab('ads')">Реклама (${ads.rowCount})</div>
+  <div class="tab" onclick="showTab('revenue')">Доходы</div>
 </div>
 
 <div class="content">
@@ -912,7 +987,7 @@ app.get("/admin", adminAuth, async (req, res) => {
       return `
       <h3 style="margin-bottom:10px;color:#fbbf24;">⏳ Заявки на модерации (${pending.length})</h3>
       <table style="margin-bottom:24px;">
-        <tr><th>Превью</th><th>Тип</th><th>Ссылка</th><th>Рекламодатель</th><th>Оплата</th><th>Действие</th></tr>
+        <tr><th>Превью</th><th>Тип</th><th>Ссылка</th><th>Рекламодатель</th><th>Пакет</th><th>Оплата</th><th>Действие</th></tr>
         ${pending.map(a => `
         <tr>
           <td>${a.type === 'image'
@@ -921,7 +996,8 @@ app.get("/admin", adminAuth, async (req, res) => {
           <td>${a.type === 'image' ? '🖼️' : '🎬'}</td>
           <td style="max-width:200px;word-break:break-word;font-size:11px;color:#64748b">${a.link_url || '—'}</td>
           <td>${a.advertiser_tg_id || '—'}</td>
-          <td>${a.payment_method === 'ton' ? `TON<br><span style="font-size:10px;color:#64748b">${a.ton_comment || ''}</span>` : `⭐ ${a.payment_amount || ''}`}</td>
+          <td>${(a.impression_limit || 0).toLocaleString('ru')} показов</td>
+          <td>${a.payment_method === 'ton' ? `TON ${a.payment_amount || ''}<br><span style="font-size:10px;color:#64748b">${a.ton_comment || ''}</span>` : `⭐ ${a.payment_amount || ''}`}</td>
           <td>
             <button class="unban-btn" onclick="approveAd(${a.id})">Одобрить</button>
             <button class="ban-btn" onclick="rejectAd(${a.id})">Отклонить</button>
@@ -952,16 +1028,68 @@ app.get("/admin", adminAuth, async (req, res) => {
         <td>${a.type === 'image' ? '🖼️ Картинка' : '🎬 Видео'}</td>
         <td>${a.title || '—'}</td>
         <td style="max-width:200px;word-break:break-word;font-size:11px;color:#64748b">${a.link_url || '—'}</td>
-        <td>${a.impressions}</td>
+        <td>${a.impressions}${a.impression_limit ? ' / ' + a.impression_limit : ''}</td>
         <td>${a.clicks}</td>
         <td>${a.active && a.status === 'approved' ? '<span style="color:#4ade80">Активна</span>'
               : a.status === 'rejected' ? '<span style="color:#f87171">Отклонена</span>'
               : a.status === 'pending_payment' ? '<span style="color:#64748b">Ждёт оплаты</span>'
+              : a.status === 'approved' ? '<span style="color:#64748b">Лимит исчерпан</span>'
               : '<span style="color:#64748b">Выключена</span>'}</td>
         <td>
           ${a.status === 'approved' ? `<button class="btn" onclick="toggleAd(${a.id})">${a.active ? 'Выключить' : 'Включить'}</button>` : ''}
           <button class="ban-btn" onclick="deleteAd(${a.id})">Удалить</button>
         </td>
+      </tr>`).join('')}
+    </table>`}
+  </div>
+
+  <!-- Доходы -->
+  <div class="section" id="tab-revenue">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:24px;">
+      <div class="panel-card">
+        <div class="panel-title" style="text-align:center;margin-bottom:10px;color:#64748b;font-size:11px;text-transform:uppercase;">Доходы в Stars</div>
+        <div style="display:flex;align-items:center;gap:16px;">
+          ${buildDonutSvg(starsTotals, starsGrandTotal)}
+          <div>${buildLegend(starsTotals, starsGrandTotal, '⭐')}</div>
+        </div>
+        <div style="text-align:center;margin-top:10px;font-size:20px;font-weight:800;color:#38bdf8;">${Math.round(starsGrandTotal)} ⭐</div>
+      </div>
+      <div class="panel-card">
+        <div class="panel-title" style="text-align:center;margin-bottom:10px;color:#64748b;font-size:11px;text-transform:uppercase;">Доходы в TON</div>
+        <div style="display:flex;align-items:center;gap:16px;">
+          ${buildDonutSvg(tonTotals, tonGrandTotal)}
+          <div>${buildLegend(tonTotals, tonGrandTotal, 'TON')}</div>
+        </div>
+        <div style="text-align:center;margin-top:10px;font-size:20px;font-weight:800;color:#38bdf8;">${tonGrandTotal.toFixed(2)} TON</div>
+      </div>
+    </div>
+
+    <div class="action-row" style="flex-wrap:wrap;">
+      <select id="txCategory" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:8px;">
+        <option value="external_ads" style="color:#000;">Telegram Ads / Adsgram (вручную)</option>
+        <option value="premium" style="color:#000;">Premium</option>
+        <option value="donate" style="color:#000;">Донат</option>
+        <option value="ad_slot" style="color:#000;">Наша реклама</option>
+      </select>
+      <input type="number" id="txAmount" placeholder="Сумма" style="width:120px;"/>
+      <select id="txCurrency" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:8px;">
+        <option value="XTR" style="color:#000;">⭐ Stars</option>
+        <option value="TON" style="color:#000;">TON</option>
+      </select>
+      <input type="text" id="txDescription" placeholder="Описание (необязательно)" style="width:220px;"/>
+      <button class="btn" onclick="addManualTransaction()">Добавить</button>
+    </div>
+
+    ${transactions.rowCount === 0 ? '<div class="empty">Транзакций пока нет</div>' : `
+    <table>
+      <tr><th>Дата и время</th><th>Категория</th><th>Пользователь</th><th>Описание</th><th>Сумма</th></tr>
+      ${transactions.rows.map(t => `
+      <tr>
+        <td style="font-size:12px;color:#64748b;">${new Date(t.created_at).toLocaleString('ru')}</td>
+        <td><span style="color:${CATEGORY_COLORS[t.category]||'#64748b'};">● ${CATEGORY_LABELS[t.category] || t.category}</span></td>
+        <td>${t.username ? '@'+t.username : (t.telegram_id || '—')}</td>
+        <td style="font-size:12px;color:#94a3b8;">${t.description || '—'}</td>
+        <td style="font-weight:700;color:#4ade80;">+${t.currency === 'TON' ? Number(t.amount).toFixed(2) : Math.round(t.amount)} ${t.currency === 'TON' ? 'TON' : '⭐'}</td>
       </tr>`).join('')}
     </table>`}
   </div>
@@ -1096,6 +1224,21 @@ async function deleteAd(id) {
   else alert('Ошибка: ' + await r.text());
 }
 
+async function addManualTransaction() {
+  const category = document.getElementById('txCategory').value;
+  const amount = document.getElementById('txAmount').value;
+  const currency = document.getElementById('txCurrency').value;
+  const description = document.getElementById('txDescription').value;
+  if (!amount || Number(amount) <= 0) return alert('Введите сумму');
+  const r = await fetch('/admin/transactions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+    body: JSON.stringify({ category, amount, currency, description })
+  });
+  if (r.ok) location.reload();
+  else alert('Ошибка: ' + await r.text());
+}
+
 async function manualUnban(id) {
   if (!confirm('Разбанить ' + id + '?')) return;
   const r = await fetch('/admin/unban', {
@@ -1182,6 +1325,16 @@ app.post("/admin/revoke-premium", adminAuth, async (req, res) => {
 });
 
 // ---------- Реклама: управление из админки ----------
+// Ручное добавление транзакции — для доходов, которые не проходят через
+// наш платёжный поток (например, выплаты от Adsgram/Telegram Ads)
+app.post("/admin/transactions", adminAuth, async (req, res) => {
+  const { category, amount, currency, description } = req.body;
+  if (!category || !amount) return res.status(400).send("category и amount обязательны");
+  await logTransaction({ category, amount: Number(amount), currency: currency || "XTR", description });
+  console.log("[admin] добавлена ручная транзакция:", category, amount, currency);
+  res.json({ ok: true });
+});
+
 app.post("/admin/ads", adminAuth, async (req, res) => {
   if (!db) return res.status(503).send("БД недоступна");
   const { type, mediaUrl, linkUrl, title } = req.body;
@@ -1219,20 +1372,28 @@ app.post("/admin/ads/:id/delete", adminAuth, async (req, res) => {
   }
 });
 
-// Одобрить заявку на рекламу — активирует её на AD_SLOT_DAYS дней с этого момента
+// Одобрить заявку на рекламу — активирует до исчерпания оплаченного лимита показов
 app.post("/admin/ads/:id/approve", adminAuth, async (req, res) => {
   if (!db) return res.status(503).send("БД недоступна");
   try {
     const r = await db.query(
-      `UPDATE ads SET status = 'approved', active = TRUE,
-              expires_at = NOW() + INTERVAL '${AD_SLOT_DAYS} days'
-       WHERE id = $1 RETURNING advertiser_tg_id`,
+      `UPDATE ads SET status = 'approved', active = TRUE
+       WHERE id = $1 RETURNING advertiser_tg_id, impression_limit, payment_method, payment_amount, ton_comment`,
       [req.params.id]
     );
     console.log("[admin] реклама #" + req.params.id + " одобрена");
 
+    const adRow = r.rows[0];
+    if (adRow?.payment_method === "ton") {
+      await logTransaction({
+        category: "ad_slot", telegramId: adRow.advertiser_tg_id, amount: adRow.payment_amount,
+        currency: "TON", description: "Реклама (TON), заявка #" + req.params.id, chargeId: adRow.ton_comment,
+      });
+    }
+
     // Уведомляем рекламодателя, если это была self-service заявка
     const advertiserTgId = r.rows[0]?.advertiser_tg_id;
+    const impressionLimit = r.rows[0]?.impression_limit;
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (advertiserTgId && botToken) {
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -1240,7 +1401,7 @@ app.post("/admin/ads/:id/approve", adminAuth, async (req, res) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: advertiserTgId,
-          text: `✅ Ваша реклама одобрена и запущена на ${AD_SLOT_DAYS} дней!`,
+          text: `✅ Ваша реклама одобрена и запущена! Пакет: ${(impressionLimit || 0).toLocaleString('ru')} показов.`,
         }),
       }).catch(() => {});
     }
@@ -1359,7 +1520,16 @@ app.post("/ad-event", async (req, res) => {
   if (!adId || !["impression", "click"].includes(type)) return res.status(400).json({ error: "bad request" });
   try {
     const col = type === "click" ? "clicks" : "impressions";
-    await db.query(`UPDATE ads SET ${col} = ${col} + 1 WHERE id = $1`, [adId]);
+    const r = await db.query(
+      `UPDATE ads SET ${col} = ${col} + 1 WHERE id = $1 RETURNING impressions, impression_limit, active`,
+      [adId]
+    );
+    const row = r.rows[0];
+    // Показ достиг оплаченного лимита — гасим рекламу сами, дальше её показывать нельзя
+    if (row && row.active && row.impression_limit != null && row.impressions >= row.impression_limit) {
+      await db.query("UPDATE ads SET active = FALSE WHERE id = $1", [adId]);
+      console.log("[ads] реклама #" + adId + " исчерпала лимит показов (" + row.impression_limit + ") — отключена");
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1371,22 +1541,29 @@ app.post("/ad-event", async (req, res) => {
 // выбирает Stars или TON, платит, и заявка уходит на ручную модерацию (см. /admin).
 app.post("/submit-ad", async (req, res) => {
   if (!db) return res.status(503).json({ error: "БД недоступна" });
-  const { telegramId, type, mediaUrl, linkUrl, title, paymentMethod } = req.body;
+  const { telegramId, type, mediaUrl, linkUrl, title, paymentMethod, impressions } = req.body;
 
   if (!telegramId) return res.status(400).json({ error: "telegramId обязателен" });
   if (!mediaUrl) return res.status(400).json({ error: "Укажите ссылку на картинку/видео" });
   if (!["image", "video"].includes(type)) return res.status(400).json({ error: "Неверный тип" });
   if (!["stars", "ton"].includes(paymentMethod)) return res.status(400).json({ error: "Выберите способ оплаты" });
 
+  const impressionCount = parseInt(impressions, 10);
+  if (!Number.isFinite(impressionCount) || impressionCount < AD_MIN_IMPRESSIONS || impressionCount % 1000 !== 0) {
+    return res.status(400).json({ error: `Количество показов должно быть кратно 1000, минимум ${AD_MIN_IMPRESSIONS}` });
+  }
+  const packsOf1000 = impressionCount / 1000;
+
   try {
     if (paymentMethod === "stars") {
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       if (!botToken) return res.status(500).json({ error: "BOT_TOKEN не задан" });
 
+      const priceStars = Math.round(packsOf1000 * AD_PRICE_PER_1000_STARS);
       const insert = await db.query(
-        `INSERT INTO ads (type, media_url, link_url, title, active, status, advertiser_tg_id, payment_method, payment_amount)
-         VALUES ($1,$2,$3,$4,FALSE,'pending_payment',$5,'stars',$6) RETURNING id`,
-        [type, mediaUrl, linkUrl || null, title || null, telegramId, AD_SLOT_PRICE_STARS]
+        `INSERT INTO ads (type, media_url, link_url, title, active, status, advertiser_tg_id, payment_method, payment_amount, impression_limit)
+         VALUES ($1,$2,$3,$4,FALSE,'pending_payment',$5,'stars',$6,$7) RETURNING id`,
+        [type, mediaUrl, linkUrl || null, title || null, telegramId, priceStars, impressionCount]
       );
       const adId = insert.rows[0].id;
 
@@ -1396,39 +1573,40 @@ app.post("/submit-ad", async (req, res) => {
         body: JSON.stringify({
           chat_id: telegramId,
           title: "Размещение рекламы в Spinny",
-          description: `Реклама на ${AD_SLOT_DAYS} дней после одобрения модератором`,
+          description: `${impressionCount.toLocaleString('ru')} показов после одобрения модератором`,
           payload: `ad_slot:${adId}`,
           provider_token: "",
           currency: "XTR",
-          prices: [{ label: "Реклама в Spinny", amount: AD_SLOT_PRICE_STARS }],
+          prices: [{ label: "Реклама в Spinny", amount: priceStars }],
         }),
       });
       const data = await r.json();
       if (!data.ok) throw new Error(data.description);
 
-      console.log("[submit-ad] заявка #", adId, "| Stars-инвойс отправлен", telegramId);
+      console.log("[submit-ad] заявка #", adId, "|", impressionCount, "показов | Stars-инвойс отправлен", telegramId);
       res.json({ ok: true, method: "stars" });
     } else {
       // TON — своя оплата вне Bot API, генерируем уникальный комментарий для сверки
       if (!TON_WALLET_ADDRESS) return res.status(503).json({ error: "TON-оплата пока не настроена" });
 
+      const priceTon = Math.round(packsOf1000 * AD_PRICE_PER_1000_TON * 100) / 100;
       const tonComment = `AD${Date.now().toString(36).toUpperCase()}`;
       const insert = await db.query(
-        `INSERT INTO ads (type, media_url, link_url, title, active, status, advertiser_tg_id, payment_method, payment_amount, ton_comment)
-         VALUES ($1,$2,$3,$4,FALSE,'pending_payment',$5,'ton',$6,$7) RETURNING id`,
-        [type, mediaUrl, linkUrl || null, title || null, telegramId, AD_SLOT_PRICE_TON, tonComment]
+        `INSERT INTO ads (type, media_url, link_url, title, active, status, advertiser_tg_id, payment_method, payment_amount, ton_comment, impression_limit)
+         VALUES ($1,$2,$3,$4,FALSE,'pending_payment',$5,'ton',$6,$7,$8) RETURNING id`,
+        [type, mediaUrl, linkUrl || null, title || null, telegramId, priceTon, tonComment, impressionCount]
       );
       const adId = insert.rows[0].id;
 
-      console.log("[submit-ad] заявка #", adId, "| ожидает TON-оплаты, комментарий:", tonComment);
+      console.log("[submit-ad] заявка #", adId, "|", impressionCount, "показов | ожидает TON-оплаты, комментарий:", tonComment);
       res.json({
         ok: true,
         method: "ton",
         adId,
         tonAddress: TON_WALLET_ADDRESS,
-        tonAmount: AD_SLOT_PRICE_TON,
+        tonAmount: priceTon,
         tonComment,
-        tonDeepLink: `ton://transfer/${TON_WALLET_ADDRESS}?amount=${Math.round(AD_SLOT_PRICE_TON * 1e9)}&text=${encodeURIComponent(tonComment)}`,
+        tonDeepLink: `ton://transfer/${TON_WALLET_ADDRESS}?amount=${Math.round(priceTon * 1e9)}&text=${encodeURIComponent(tonComment)}`,
       });
     }
   } catch (e) {
@@ -1670,8 +1848,8 @@ io.on("connection", (socket) => {
     const langB = getLang(b) || "any";
     console.log("[match]", a, `(${langA})`, "<->", b, `(${langB})`);
 
-    io.to(a).emit("matched", { room, initiator: true });
-    io.to(b).emit("matched", { room, initiator: false });
+    io.to(a).emit("matched", { room, initiator: true, partnerLang: langB === "any" ? null : langB });
+    io.to(b).emit("matched", { room, initiator: false, partnerLang: langA === "any" ? null : langA });
     return true;
   }
 
