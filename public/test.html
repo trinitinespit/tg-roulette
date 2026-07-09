@@ -901,13 +901,13 @@ html, body {
 <div class="modal-backdrop" id="advertiseModal" hidden onclick="closeAdvertiseModal(event)">
   <div class="modal-sheet" id="advertiseFormSheet">
     <div class="modal-title">📢 Разместить рекламу</div>
-    <div style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
+    <div id="advertiseDescText" style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
       Реклама показывается до исчерпания оплаченного пакета показов, после проверки модератором
     </div>
 
     <select id="adFormType" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;">
-      <option value="image" style="color:#000;">🖼️ Картинка (между звонками)</option>
-      <option value="video" style="color:#000;">🎬 Видео (во время поиска)</option>
+      <option id="adTypeImageOpt" value="image" style="color:#000;">🖼️ Картинка (между звонками)</option>
+      <option id="adTypeVideoOpt" value="video" style="color:#000;">🎬 Видео (во время поиска)</option>
     </select>
     <input type="text" id="adFormMediaUrl" placeholder="Ссылка на картинку/видео" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:6px;"/>
     <div style="font-size:11px;color:#6f8bb0;margin-bottom:10px;line-height:1.5;">
@@ -918,11 +918,11 @@ html, body {
     <input type="text" id="adFormTitle" placeholder="Название (для себя, необязательно)" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;"/>
 
     <select id="adFormImpressions" onchange="updateAdPricePreview()" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:14px;margin-bottom:10px;">
-      <option value="1000" style="color:#000;">1 000 показов</option>
-      <option value="5000" style="color:#000;">5 000 показов</option>
-      <option value="10000" style="color:#000;">10 000 показов</option>
-      <option value="50000" style="color:#000;">50 000 показов</option>
-      <option value="100000" style="color:#000;">100 000 показов</option>
+      <option id="adImp1000" value="1000" style="color:#000;">1 000 показов</option>
+      <option id="adImp5000" value="5000" style="color:#000;">5 000 показов</option>
+      <option id="adImp10000" value="10000" style="color:#000;">10 000 показов</option>
+      <option id="adImp50000" value="50000" style="color:#000;">50 000 показов</option>
+      <option id="adImp100000" value="100000" style="color:#000;">100 000 показов</option>
     </select>
     <div id="adPricePreview" style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;"></div>
 
@@ -1048,6 +1048,23 @@ for (const lang in TRANSLATIONS_EXTRA) {
   Object.assign(TRANSLATIONS[lang] || (TRANSLATIONS[lang] = {}), TRANSLATIONS_EXTRA[lang]);
 }
 
+const TRANSLATIONS_EXTRA2 = {
+  ru: { premium_active_label:"Premium активен", ad_type_image:"🖼️ Картинка (между звонками)", ad_type_video:"🎬 Видео (во время поиска)", advertise_desc:"Реклама показывается до исчерпания оплаченного пакета показов, после проверки модератором", impressions_word:"показов" },
+  en: { premium_active_label:"Premium active", ad_type_image:"🖼️ Image (between calls)", ad_type_video:"🎬 Video (while searching)", advertise_desc:"Your ad runs until the paid impression package is used up, after moderator review", impressions_word:"impressions" },
+  es: { premium_active_label:"Premium activo", ad_type_image:"🖼️ Imagen (entre llamadas)", ad_type_video:"🎬 Video (durante la búsqueda)", advertise_desc:"Tu anuncio se muestra hasta agotar el paquete de vistas pagado, tras la revisión del moderador", impressions_word:"vistas" },
+  tr: { premium_active_label:"Premium aktif", ad_type_image:"🖼️ Görsel (görüşmeler arasında)", ad_type_video:"🎬 Video (arama sırasında)", advertise_desc:"Reklamınız, moderatör onayının ardından ödenen gösterim paketi bitene kadar yayınlanır", impressions_word:"gösterim" },
+  it: { premium_active_label:"Premium attivo", ad_type_image:"🖼️ Immagine (tra le chiamate)", ad_type_video:"🎬 Video (durante la ricerca)", advertise_desc:"L'annuncio viene mostrato finché non si esaurisce il pacchetto di visualizzazioni pagato, dopo la revisione del moderatore", impressions_word:"visualizzazioni" },
+  zh: { premium_active_label:"Premium 已激活", ad_type_image:"🖼️ 图片（通话之间）", ad_type_video:"🎬 视频（搜索期间）", advertise_desc:"经审核通过后，广告将展示直至已付费的展示次数用完为止", impressions_word:"次展示" },
+  ar: { premium_active_label:"Premium مفعّل", ad_type_image:"🖼️ صورة (بين المكالمات)", ad_type_video:"🎬 فيديو (أثناء البحث)", advertise_desc:"يُعرض إعلانك حتى نفاد باقة المشاهدات المدفوعة، بعد مراجعة المشرف", impressions_word:"مشاهدة" },
+  hi: { premium_active_label:"Premium सक्रिय है", ad_type_image:"🖼️ छवि (कॉल के बीच)", ad_type_video:"🎬 वीडियो (खोज के दौरान)", advertise_desc:"मॉडरेटर की समीक्षा के बाद, भुगतान किया गया इंप्रेशन पैकेज समाप्त होने तक आपका विज्ञापन चलता है", impressions_word:"इंप्रेशन" },
+  ja: { premium_active_label:"Premium 有効", ad_type_image:"🖼️ 画像（通話の合間）", ad_type_video:"🎬 動画（検索中）", advertise_desc:"モデレーター確認後、購入した表示回数パッケージがなくなるまで広告が表示されます", impressions_word:"回表示" },
+  fr: { premium_active_label:"Premium actif", ad_type_image:"🖼️ Image (entre les appels)", ad_type_video:"🎬 Vidéo (pendant la recherche)", advertise_desc:"Votre publicité s'affiche jusqu'à épuisement du forfait d'impressions payé, après validation par un modérateur", impressions_word:"impressions" },
+  de: { premium_active_label:"Premium aktiv", ad_type_image:"🖼️ Bild (zwischen Anrufen)", ad_type_video:"🎬 Video (während der Suche)", advertise_desc:"Deine Anzeige läuft nach der Moderatorenprüfung, bis das bezahlte Impressionspaket aufgebraucht ist", impressions_word:"Impressionen" },
+};
+for (const lang in TRANSLATIONS_EXTRA2) {
+  Object.assign(TRANSLATIONS[lang] || (TRANSLATIONS[lang] = {}), TRANSLATIONS_EXTRA2[lang]);
+}
+
 let currentLang = "ru";
 
 function translate(key) {
@@ -1131,6 +1148,18 @@ function applyLanguage(lang) {
 
   // Кнопки "Понятно" в модалках правил/приватности
   document.querySelectorAll('[data-i18n-gotit]').forEach(el => el.textContent = translate("got_it_button"));
+
+  // Реклама: описание, типы, пакеты показов
+  const advertiseDesc = document.getElementById("advertiseDescText");
+  if (advertiseDesc) advertiseDesc.textContent = translate("advertise_desc");
+  const adTypeImageOpt = document.getElementById("adTypeImageOpt");
+  if (adTypeImageOpt) adTypeImageOpt.textContent = translate("ad_type_image");
+  const adTypeVideoOpt = document.getElementById("adTypeVideoOpt");
+  if (adTypeVideoOpt) adTypeVideoOpt.textContent = translate("ad_type_video");
+  [1000, 5000, 10000, 50000, 100000].forEach(n => {
+    const opt = document.getElementById("adImp" + n);
+    if (opt) opt.textContent = n.toLocaleString(currentLang) + " " + translate("impressions_word");
+  });
 }
 
 function detectInitialLanguage() {
@@ -1156,6 +1185,11 @@ function closeLangModal(e) {
 }
 function selectLanguage(code) {
   applyLanguage(code);
+  // Пол/премиум уже могли быть выбраны раньше и держат текст на старом языке —
+  // перерисовываем их тоже. Безопасно вызывать именно тут (не при первой
+  // автозагрузке) — к моменту клика пользователя весь скрипт уже выполнился.
+  if (typeof applyGender === "function") applyGender(myGender);
+  if (typeof applyPremiumUI === "function") applyPremiumUI(myPremium);
   document.getElementById("langModal").hidden = true;
 }
 
@@ -1229,8 +1263,9 @@ function closeGenderModal(e) {
 
 function applyGender(g) {
   myGender = g;
-  const labels = { male: ["👨","Мужской"], female: ["👩","Женский"] };
-  const [em, lb] = labels[g] || ["🙂","Ваш пол"];
+  const emojis = { male: "👨", female: "👩" };
+  const em = emojis[g] || "🙂";
+  const lb = g === "male" ? translate("gender_male") : g === "female" ? translate("gender_female") : translate("gender_modal_title");
   document.getElementById("genderEmoji").textContent = em;
   document.getElementById("genderLabel").textContent = lb;
   ["gOpt1","gOpt2"].forEach(id => document.getElementById(id).classList.remove("selected"));
@@ -1960,12 +1995,13 @@ async function confirmTonPayment() {
 function applyPremiumUI(premium) {
   myPremium = premium;
   const btn = document.getElementById("btnPremium");
+  const btnText = document.getElementById("btnPremiumText");
   if (premium) {
-    btn.textContent = "⭐ Premium активен";
+    btnText.textContent = translate("premium_active_label");
     btn.classList.add("is-premium");
     btn.onclick = null;
   } else {
-    btn.textContent = "⭐ Получить Premium";
+    btnText.textContent = translate("premium_button");
     btn.classList.remove("is-premium");
     btn.onclick = openPremiumModal;
   }
