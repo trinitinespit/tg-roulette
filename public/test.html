@@ -763,7 +763,7 @@ html, body {
       <!-- Next -->
       <button class="btn-next" id="btnNext" onclick="doNext()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-        Дальше
+        <span id="btnNextText">Дальше</span>
       </button>
       <!-- Блок -->
       <button class="btn-icon" id="btnBlock" title="Заблокировать" onclick="doBlock()">🚫</button>
@@ -821,7 +821,7 @@ html, body {
       </ul>
       <p style="color:#9AB2CC;font-size:12px;">Нарушение правил приводит к блокировке аккаунта. Мы оставляем за собой право блокировать пользователей без предупреждения за серьёзные нарушения.</p>
     </div>
-    <button class="btn-start" style="margin-top:16px;" onclick="document.getElementById('rulesModal').hidden=true;">Понятно</button>
+    <button class="btn-start" style="margin-top:16px;" onclick="document.getElementById('rulesModal').hidden=true;" data-i18n-gotit>Понятно</button>
   </div>
 </div>
 
@@ -837,7 +837,7 @@ html, body {
       <p style="margin-bottom:10px;"><b style="color:#fff;">Хранение:</b> данные хранятся, пока у вас есть аккаунт. Вы можете запросить удаление данных, написав в поддержку через бота.</p>
       <p style="color:#9AB2CC;font-size:12px;">Используя Spinny, вы соглашаетесь с этой политикой. Мы можем обновлять её — актуальная версия всегда доступна в этом окне.</p>
     </div>
-    <button class="btn-start" style="margin-top:16px;" onclick="document.getElementById('privacyModal').hidden=true;">Понятно</button>
+    <button class="btn-start" style="margin-top:16px;" onclick="document.getElementById('privacyModal').hidden=true;" data-i18n-gotit>Понятно</button>
   </div>
 </div>
 
@@ -889,7 +889,7 @@ html, body {
       <button class="modal-option" style="flex:1;justify-content:center;" onclick="setDonateAmount(1000)">1000</button>
     </div>
     <button class="btn-premium" id="donateSubmitBtn" onclick="submitDonate()" style="width:100%;">
-      ❤️ Задонатить
+      ❤️ <span id="donateSubmitText">Задонатить</span>
     </button>
     <p style="font-size:11px;color:#9AB2CC;text-align:center;margin-top:10px;">
       После нажатия инвойс придёт в чат с ботом
@@ -936,7 +936,7 @@ html, body {
     </div>
 
     <button class="btn-premium" id="adSubmitBtn" onclick="submitAd()" style="width:100%;">
-      Оформить заявку
+      <span id="adSubmitText">Оформить заявку</span>
     </button>
   </div>
 
@@ -947,22 +947,22 @@ html, body {
       Переведите точную сумму на адрес ниже, обязательно указав комментарий — по нему заявка сверяется с платежом.
     </div>
     <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;">
-      <div style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Адрес</div>
+      <div id="adTonAddressLabel" style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Адрес</div>
       <div id="adTonAddress" style="word-break:break-all;font-family:monospace;"></div>
     </div>
     <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;">
-      <div style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Сумма</div>
+      <div id="adTonAmountLabel" style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Сумма</div>
       <div id="adTonAmount" style="font-family:monospace;"></div>
     </div>
     <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:14px;font-size:13px;">
-      <div style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Комментарий (обязательно!)</div>
+      <div id="adTonCommentLabel" style="color:#9AB2CC;font-size:11px;margin-bottom:2px;">Комментарий (обязательно!)</div>
       <div id="adTonComment" style="word-break:break-all;font-family:monospace;font-weight:700;"></div>
     </div>
     <a id="adTonDeepLink" href="#" style="text-decoration:none;">
-      <button class="btn-premium" style="width:100%;margin-bottom:8px;">Открыть кошелёк</button>
+      <button class="btn-premium" style="width:100%;margin-bottom:8px;"><span id="walletOpenText">Открыть кошелёк</span></button>
     </a>
     <button id="adTonConfirmBtn" onclick="confirmTonPayment()" style="width:100%;padding:13px;border-radius:12px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#fff;font-size:15px;font-weight:700;">
-      ✅ Я оплатил
+      ✅ <span id="tonPaidText">Я оплатил</span>
     </button>
   </div>
 </div>
@@ -1029,6 +1029,25 @@ const LANG_DISPLAY = {
   fr: { flag:"🇫🇷", code:"FR" }, de: { flag:"🇩🇪", code:"DE" },
 };
 
+// Вторая партия ключей — экран звонка, ошибки, попапы доната/рекламы/TON.
+// Отдельный объект просто для удобства редактирования, ниже сливается с TRANSLATIONS.
+const TRANSLATIONS_EXTRA = {
+  ru: { next_button:"Дальше", report_title:"Пожаловаться", chat_title:"Чат", block_title:"Заблокировать", connection_lost_msg:"Соединение прервано. Нажмите Дальше.", banned_default_msg:"Вы заблокированы за нарушение правил.", account_blocked_btn:"Аккаунт заблокирован", loading_camera:"Включаем камеру…", camera_access_error_prefix:"Не удалось получить доступ к камере: ", call_start_error_prefix:"Не удалось начать звонок: ", generic_error_prefix:"Ошибка: ", unknown_error:"Неизвестная ошибка", invoice_error_prefix:"Ошибка отправки инвойса: ", connection_error_prefix:"Ошибка соединения: ", telegram_login_required:"Войдите через Telegram, чтобы продолжить", amount_invalid:"Введите корректную сумму", media_url_required:"Укажите ссылку на картинку/видео", payment_method_required:"Выберите способ оплаты", sending_text:"Отправляем...", submit_ad_button:"Оформить заявку", looking_for_label:"Ищу", world_wide:"Весь мир", got_it_button:"Понятно", donate_amount_placeholder:"Сумма в Stars", donate_button_action:"Задонатить", ad_media_url_placeholder:"Ссылка на картинку/видео", ad_link_placeholder:"Ссылка при клике (t.me/... или https://...)", ad_title_placeholder:"Название (для себя, необязательно)", wallet_open_button:"Открыть кошелёк", ton_paid_button:"Я оплатил", amount_label:"Сумма", address_label:"Адрес", comment_required_label:"Комментарий (обязательно!)" },
+  en: { next_button:"Next", report_title:"Report", chat_title:"Chat", block_title:"Block", connection_lost_msg:"Connection lost. Tap Next.", banned_default_msg:"You are banned for violating the rules.", account_blocked_btn:"Account blocked", loading_camera:"Turning on camera…", camera_access_error_prefix:"Couldn't access the camera: ", call_start_error_prefix:"Couldn't start the call: ", generic_error_prefix:"Error: ", unknown_error:"Unknown error", invoice_error_prefix:"Error sending invoice: ", connection_error_prefix:"Connection error: ", telegram_login_required:"Log in via Telegram to continue", amount_invalid:"Enter a valid amount", media_url_required:"Enter a link to an image/video", payment_method_required:"Choose a payment method", sending_text:"Sending...", submit_ad_button:"Submit request", looking_for_label:"Looking for", world_wide:"Worldwide", got_it_button:"Got it", donate_amount_placeholder:"Amount in Stars", donate_button_action:"Donate", ad_media_url_placeholder:"Link to image/video", ad_link_placeholder:"Link on click (t.me/... or https://...)", ad_title_placeholder:"Name (for yourself, optional)", wallet_open_button:"Open wallet", ton_paid_button:"I've paid", amount_label:"Amount", address_label:"Address", comment_required_label:"Comment (required!)" },
+  es: { next_button:"Siguiente", report_title:"Denunciar", chat_title:"Chat", block_title:"Bloquear", connection_lost_msg:"Conexión perdida. Toca Siguiente.", banned_default_msg:"Has sido bloqueado por infringir las reglas.", account_blocked_btn:"Cuenta bloqueada", loading_camera:"Activando cámara…", camera_access_error_prefix:"No se pudo acceder a la cámara: ", call_start_error_prefix:"No se pudo iniciar la llamada: ", generic_error_prefix:"Error: ", unknown_error:"Error desconocido", invoice_error_prefix:"Error al enviar la factura: ", connection_error_prefix:"Error de conexión: ", telegram_login_required:"Inicia sesión con Telegram para continuar", amount_invalid:"Introduce una cantidad válida", media_url_required:"Indica un enlace a la imagen/video", payment_method_required:"Elige un método de pago", sending_text:"Enviando...", submit_ad_button:"Enviar solicitud", looking_for_label:"Buscando", world_wide:"Todo el mundo", got_it_button:"Entendido", donate_amount_placeholder:"Cantidad en Stars", donate_button_action:"Donar", ad_media_url_placeholder:"Enlace a imagen/video", ad_link_placeholder:"Enlace al hacer clic (t.me/... o https://...)", ad_title_placeholder:"Nombre (para ti, opcional)", wallet_open_button:"Abrir billetera", ton_paid_button:"Ya pagué", amount_label:"Cantidad", address_label:"Dirección", comment_required_label:"Comentario (¡obligatorio!)" },
+  tr: { next_button:"Sonraki", report_title:"Şikayet et", chat_title:"Sohbet", block_title:"Engelle", connection_lost_msg:"Bağlantı kesildi. Sonraki'ye dokun.", banned_default_msg:"Kuralları ihlal ettiğiniz için engellendiniz.", account_blocked_btn:"Hesap engellendi", loading_camera:"Kamera açılıyor…", camera_access_error_prefix:"Kameraya erişilemedi: ", call_start_error_prefix:"Görüşme başlatılamadı: ", generic_error_prefix:"Hata: ", unknown_error:"Bilinmeyen hata", invoice_error_prefix:"Fatura gönderme hatası: ", connection_error_prefix:"Bağlantı hatası: ", telegram_login_required:"Devam etmek için Telegram ile giriş yapın", amount_invalid:"Geçerli bir miktar girin", media_url_required:"Resim/video bağlantısı girin", payment_method_required:"Ödeme yöntemi seçin", sending_text:"Gönderiliyor...", submit_ad_button:"Talebi gönder", looking_for_label:"Arıyorum", world_wide:"Tüm dünya", got_it_button:"Anladım", donate_amount_placeholder:"Stars cinsinden miktar", donate_button_action:"Bağış yap", ad_media_url_placeholder:"Resim/video bağlantısı", ad_link_placeholder:"Tıklama bağlantısı (t.me/... veya https://...)", ad_title_placeholder:"İsim (kendiniz için, isteğe bağlı)", wallet_open_button:"Cüzdanı aç", ton_paid_button:"Ödedim", amount_label:"Miktar", address_label:"Adres", comment_required_label:"Yorum (zorunlu!)" },
+  it: { next_button:"Avanti", report_title:"Segnala", chat_title:"Chat", block_title:"Blocca", connection_lost_msg:"Connessione persa. Tocca Avanti.", banned_default_msg:"Sei stato bloccato per violazione delle regole.", account_blocked_btn:"Account bloccato", loading_camera:"Attivazione fotocamera…", camera_access_error_prefix:"Impossibile accedere alla fotocamera: ", call_start_error_prefix:"Impossibile avviare la chiamata: ", generic_error_prefix:"Errore: ", unknown_error:"Errore sconosciuto", invoice_error_prefix:"Errore nell'invio della fattura: ", connection_error_prefix:"Errore di connessione: ", telegram_login_required:"Accedi con Telegram per continuare", amount_invalid:"Inserisci un importo valido", media_url_required:"Inserisci un link all'immagine/video", payment_method_required:"Scegli un metodo di pagamento", sending_text:"Invio...", submit_ad_button:"Invia richiesta", looking_for_label:"Cerco", world_wide:"Tutto il mondo", got_it_button:"Capito", donate_amount_placeholder:"Importo in Stars", donate_button_action:"Dona", ad_media_url_placeholder:"Link a immagine/video", ad_link_placeholder:"Link al click (t.me/... o https://...)", ad_title_placeholder:"Nome (per te, facoltativo)", wallet_open_button:"Apri portafoglio", ton_paid_button:"Ho pagato", amount_label:"Importo", address_label:"Indirizzo", comment_required_label:"Commento (obbligatorio!)" },
+  zh: { next_button:"下一个", report_title:"举报", chat_title:"聊天", block_title:"拉黑", connection_lost_msg:"连接已断开，点击下一个。", banned_default_msg:"您因违反规则已被封禁。", account_blocked_btn:"账号已封禁", loading_camera:"正在开启摄像头…", camera_access_error_prefix:"无法访问摄像头：", call_start_error_prefix:"无法开始通话：", generic_error_prefix:"错误：", unknown_error:"未知错误", invoice_error_prefix:"发送账单出错：", connection_error_prefix:"连接错误：", telegram_login_required:"请通过 Telegram 登录以继续", amount_invalid:"请输入有效金额", media_url_required:"请填写图片/视频链接", payment_method_required:"请选择支付方式", sending_text:"发送中...", submit_ad_button:"提交申请", looking_for_label:"寻找", world_wide:"全世界", got_it_button:"知道了", donate_amount_placeholder:"Stars 数量", donate_button_action:"捐赠", ad_media_url_placeholder:"图片/视频链接", ad_link_placeholder:"点击跳转链接（t.me/... 或 https://...）", ad_title_placeholder:"名称（仅自己可见，可选）", wallet_open_button:"打开钱包", ton_paid_button:"我已付款", amount_label:"金额", address_label:"地址", comment_required_label:"备注（必填！）" },
+  ar: { next_button:"التالي", report_title:"إبلاغ", chat_title:"دردشة", block_title:"حظر", connection_lost_msg:"انقطع الاتصال. اضغط التالي.", banned_default_msg:"تم حظرك بسبب مخالفة القواعد.", account_blocked_btn:"الحساب محظور", loading_camera:"جارٍ تشغيل الكاميرا…", camera_access_error_prefix:"تعذر الوصول إلى الكاميرا: ", call_start_error_prefix:"تعذر بدء المكالمة: ", generic_error_prefix:"خطأ: ", unknown_error:"خطأ غير معروف", invoice_error_prefix:"خطأ في إرسال الفاتورة: ", connection_error_prefix:"خطأ في الاتصال: ", telegram_login_required:"سجّل الدخول عبر تيليجرام للمتابعة", amount_invalid:"أدخل مبلغًا صحيحًا", media_url_required:"أدخل رابط الصورة/الفيديو", payment_method_required:"اختر طريقة الدفع", sending_text:"جارٍ الإرسال...", submit_ad_button:"إرسال الطلب", looking_for_label:"أبحث عن", world_wide:"العالم كله", got_it_button:"فهمت", donate_amount_placeholder:"المبلغ بعملة Stars", donate_button_action:"تبرع", ad_media_url_placeholder:"رابط الصورة/الفيديو", ad_link_placeholder:"رابط عند النقر (t.me/... أو https://...)", ad_title_placeholder:"الاسم (لك فقط، اختياري)", wallet_open_button:"فتح المحفظة", ton_paid_button:"لقد دفعت", amount_label:"المبلغ", address_label:"العنوان", comment_required_label:"تعليق (إلزامي!)" },
+  hi: { next_button:"अगला", report_title:"रिपोर्ट करें", chat_title:"चैट", block_title:"ब्लॉक करें", connection_lost_msg:"कनेक्शन टूट गया। अगला दबाएँ।", banned_default_msg:"नियमों के उल्लंघन के कारण आपको ब्लॉक कर दिया गया है।", account_blocked_btn:"अकाउंट ब्लॉक है", loading_camera:"कैमरा चालू हो रहा है…", camera_access_error_prefix:"कैमरे तक पहुंच नहीं मिली: ", call_start_error_prefix:"कॉल शुरू नहीं हो सकी: ", generic_error_prefix:"त्रुटि: ", unknown_error:"अज्ञात त्रुटि", invoice_error_prefix:"चालान भेजने में त्रुटि: ", connection_error_prefix:"कनेक्शन त्रुटि: ", telegram_login_required:"जारी रखने के लिए Telegram से लॉगिन करें", amount_invalid:"मान्य राशि दर्ज करें", media_url_required:"चित्र/वीडियो का लिंक दर्ज करें", payment_method_required:"भुगतान का तरीका चुनें", sending_text:"भेजा जा रहा है...", submit_ad_button:"अनुरोध भेजें", looking_for_label:"ढूंढ रहा/रही हूँ", world_wide:"पूरी दुनिया", got_it_button:"समझ गया", donate_amount_placeholder:"Stars में राशि", donate_button_action:"दान करें", ad_media_url_placeholder:"चित्र/वीडियो का लिंक", ad_link_placeholder:"क्लिक पर लिंक (t.me/... या https://...)", ad_title_placeholder:"नाम (केवल अपने लिए, वैकल्पिक)", wallet_open_button:"वॉलेट खोलें", ton_paid_button:"मैंने भुगतान कर दिया", amount_label:"राशि", address_label:"पता", comment_required_label:"टिप्पणी (आवश्यक!)" },
+  ja: { next_button:"次へ", report_title:"報告", chat_title:"チャット", block_title:"ブロック", connection_lost_msg:"接続が切れました。「次へ」をタップしてください。", banned_default_msg:"規約違反によりブロックされました。", account_blocked_btn:"アカウントがブロックされています", loading_camera:"カメラを起動しています…", camera_access_error_prefix:"カメラにアクセスできませんでした: ", call_start_error_prefix:"通話を開始できませんでした: ", generic_error_prefix:"エラー: ", unknown_error:"不明なエラー", invoice_error_prefix:"請求書の送信エラー: ", connection_error_prefix:"接続エラー: ", telegram_login_required:"続けるにはTelegramでログインしてください", amount_invalid:"正しい金額を入力してください", media_url_required:"画像/動画のリンクを入力してください", payment_method_required:"支払い方法を選択してください", sending_text:"送信中...", submit_ad_button:"申請を送信", looking_for_label:"検索対象", world_wide:"世界中", got_it_button:"わかりました", donate_amount_placeholder:"Starsでの金額", donate_button_action:"寄付する", ad_media_url_placeholder:"画像/動画のリンク", ad_link_placeholder:"クリック時のリンク（t.me/... または https://...）", ad_title_placeholder:"名前（自分用、任意）", wallet_open_button:"ウォレットを開く", ton_paid_button:"支払いました", amount_label:"金額", address_label:"アドレス", comment_required_label:"コメント（必須！）" },
+  fr: { next_button:"Suivant", report_title:"Signaler", chat_title:"Chat", block_title:"Bloquer", connection_lost_msg:"Connexion perdue. Appuyez sur Suivant.", banned_default_msg:"Vous avez été bloqué pour violation des règles.", account_blocked_btn:"Compte bloqué", loading_camera:"Activation de la caméra…", camera_access_error_prefix:"Impossible d'accéder à la caméra : ", call_start_error_prefix:"Impossible de démarrer l'appel : ", generic_error_prefix:"Erreur : ", unknown_error:"Erreur inconnue", invoice_error_prefix:"Erreur lors de l'envoi de la facture : ", connection_error_prefix:"Erreur de connexion : ", telegram_login_required:"Connectez-vous via Telegram pour continuer", amount_invalid:"Entrez un montant valide", media_url_required:"Indiquez un lien vers l'image/la vidéo", payment_method_required:"Choisissez un mode de paiement", sending_text:"Envoi...", submit_ad_button:"Envoyer la demande", looking_for_label:"Je cherche", world_wide:"Monde entier", got_it_button:"Compris", donate_amount_placeholder:"Montant en Stars", donate_button_action:"Faire un don", ad_media_url_placeholder:"Lien vers l'image/la vidéo", ad_link_placeholder:"Lien au clic (t.me/... ou https://...)", ad_title_placeholder:"Nom (pour vous, facultatif)", wallet_open_button:"Ouvrir le portefeuille", ton_paid_button:"J'ai payé", amount_label:"Montant", address_label:"Adresse", comment_required_label:"Commentaire (obligatoire !)" },
+  de: { next_button:"Weiter", report_title:"Melden", chat_title:"Chat", block_title:"Blockieren", connection_lost_msg:"Verbindung unterbrochen. Tippe auf Weiter.", banned_default_msg:"Du wurdest wegen eines Regelverstoßes gesperrt.", account_blocked_btn:"Konto gesperrt", loading_camera:"Kamera wird aktiviert…", camera_access_error_prefix:"Kein Zugriff auf die Kamera möglich: ", call_start_error_prefix:"Anruf konnte nicht gestartet werden: ", generic_error_prefix:"Fehler: ", unknown_error:"Unbekannter Fehler", invoice_error_prefix:"Fehler beim Senden der Rechnung: ", connection_error_prefix:"Verbindungsfehler: ", telegram_login_required:"Melde dich über Telegram an, um fortzufahren", amount_invalid:"Gib einen gültigen Betrag ein", media_url_required:"Gib einen Link zum Bild/Video an", payment_method_required:"Wähle eine Zahlungsmethode", sending_text:"Wird gesendet...", submit_ad_button:"Anfrage senden", looking_for_label:"Ich suche", world_wide:"Weltweit", got_it_button:"Verstanden", donate_amount_placeholder:"Betrag in Stars", donate_button_action:"Spenden", ad_media_url_placeholder:"Link zu Bild/Video", ad_link_placeholder:"Link beim Klick (t.me/... oder https://...)", ad_title_placeholder:"Name (nur für dich, optional)", wallet_open_button:"Wallet öffnen", ton_paid_button:"Ich habe bezahlt", amount_label:"Betrag", address_label:"Adresse", comment_required_label:"Kommentar (Pflichtfeld!)" },
+};
+for (const lang in TRANSLATIONS_EXTRA) {
+  Object.assign(TRANSLATIONS[lang] || (TRANSLATIONS[lang] = {}), TRANSLATIONS_EXTRA[lang]);
+}
+
 let currentLang = "ru";
 
 function translate(key) {
@@ -1066,6 +1085,52 @@ function applyLanguage(lang) {
   const switchCode = document.getElementById("langSwitchCode");
   if (switchFlag) switchFlag.textContent = LANG_DISPLAY[currentLang]?.flag || "🌐";
   if (switchCode) switchCode.textContent = LANG_DISPLAY[currentLang]?.code || "EN";
+
+  // Экран звонка
+  const btnNextText = document.getElementById("btnNextText");
+  if (btnNextText) btnNextText.textContent = translate("next_button");
+  const btnReport = document.getElementById("btnReport");
+  if (btnReport) btnReport.title = translate("report_title");
+  const btnChat = document.getElementById("btnChat");
+  if (btnChat) btnChat.title = translate("chat_title");
+  const btnBlock = document.getElementById("btnBlock");
+  if (btnBlock) btnBlock.title = translate("block_title");
+
+  // Донат
+  const donateAmountInput = document.getElementById("donateAmountInput");
+  if (donateAmountInput) donateAmountInput.placeholder = translate("donate_amount_placeholder");
+  const donateSubmitText = document.getElementById("donateSubmitText");
+  if (donateSubmitText) donateSubmitText.textContent = translate("donate_button_action");
+
+  // Реклама
+  const adFormMediaUrl = document.getElementById("adFormMediaUrl");
+  if (adFormMediaUrl) adFormMediaUrl.placeholder = translate("ad_media_url_placeholder");
+  const adFormLinkUrl = document.getElementById("adFormLinkUrl");
+  if (adFormLinkUrl) adFormLinkUrl.placeholder = translate("ad_link_placeholder");
+  const adFormTitle = document.getElementById("adFormTitle");
+  if (adFormTitle) adFormTitle.placeholder = translate("ad_title_placeholder");
+  const adSubmitText = document.getElementById("adSubmitText");
+  if (adSubmitText) adSubmitText.textContent = translate("submit_ad_button");
+
+  // TON-оплата
+  const tonMap = {
+    adTonAddressLabel: "address_label", adTonAmountLabel: "amount_label",
+    adTonCommentLabel: "comment_required_label", walletOpenText: "wallet_open_button",
+    tonPaidText: "ton_paid_button",
+  };
+  for (const [id, key] of Object.entries(tonMap)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = translate(key);
+  }
+
+  // Фильтр "Ищу" (премиум) и "Весь мир" в селекторе страны
+  const genderWantTitle = document.querySelector("#genderWantSection .modal-title");
+  if (genderWantTitle) genderWantTitle.textContent = "⭐ " + translate("looking_for_label");
+  const cOpt0 = document.querySelector("#cOpt0");
+  if (cOpt0 && cOpt0.lastChild) cOpt0.lastChild.textContent = " " + translate("world_wide");
+
+  // Кнопки "Понятно" в модалках правил/приватности
+  document.querySelectorAll('[data-i18n-gotit]').forEach(el => el.textContent = translate("got_it_button"));
 }
 
 function detectInitialLanguage() {
@@ -1343,7 +1408,7 @@ fetch("/ice-servers").then(r => r.json()).then(s => {
 socket.on("connect", () => {
   socket.emit("auth", { initData: tg?.initData || null });
 });
-socket.on("connect_error", e => showError("Ошибка соединения: " + e.message));
+socket.on("connect_error", e => showError(translate("connection_error_prefix") + e.message));
 
 // ─── Вход через Telegram (для прямого захода на домен) ──
 // Если мы НЕ внутри Mini App (нет initData) и сервер сказал, что мы не
@@ -1357,7 +1422,7 @@ socket.on("auth-result", ({ authenticated }) => {
 });
 
 socket.on("need-telegram-auth", () => {
-  showError("Войдите через Telegram, чтобы продолжить", true);
+  showError(translate("telegram_login_required"), true);
   showTelegramLoginGate();
 });
 
@@ -1430,7 +1495,7 @@ async function startCamera() {
   } catch(e) {
     btn.disabled = false;
     btnTextEl.textContent = translate("start_button");
-    showError("Не удалось получить доступ к камере: " + e.message);
+    showError(translate("camera_access_error_prefix") + e.message);
   }
 }
 
@@ -1568,7 +1633,7 @@ function finalizeMatch(data) {
     createPeer(data.initiator);
   } catch (e) {
     socket.emit("webrtc-debug", { event: "createPeer-throw", detail: e.message });
-    showError("Не удалось начать звонок: " + e.message);
+    showError(translate("call_start_error_prefix") + e.message);
   }
 }
 
@@ -1594,7 +1659,7 @@ socket.on("banned", data => {
   showScreen("screenHome");
   tg?.disableClosingConfirmation();
 
-  const reason = data?.reason || "Ваш аккаунт заблокирован за нарушение правил.";
+  const reason = data?.reason || translate("banned_default_msg");
   showError(reason, true);
 
   // Блокируем кнопку старта
@@ -1684,7 +1749,7 @@ function createPeer(initiator) {
 
   pc.oniceconnectionstatechange = () => {
     socket.emit("webrtc-debug", { event: "iceConnectionState", detail: pc?.iceConnectionState });
-    if (pc?.iceConnectionState === "failed") showError("Соединение прервано. Нажмите Дальше.");
+    if (pc?.iceConnectionState === "failed") showError(translate("connection_lost_msg"));
   };
 
   pc.onconnectionstatechange = () => {
@@ -1757,12 +1822,13 @@ async function submitDonate() {
   const input = document.getElementById("donateAmountInput");
   const amount = parseInt(input.value, 10);
   if (!amount || amount < 1) {
-    showError("Введите корректную сумму");
+    showError(translate("amount_invalid"));
     return;
   }
   const btn = document.getElementById("donateSubmitBtn");
+  const btnText = document.getElementById("donateSubmitText");
   btn.disabled = true;
-  btn.textContent = "📨 Отправляем инвойс...";
+  btnText.textContent = translate("sending_text");
   try {
     const r = await fetch("/create-invoice", {
       method: "POST",
@@ -1770,15 +1836,15 @@ async function submitDonate() {
       body: JSON.stringify({ telegramId: myTelegramId, product: "donate", amount }),
     });
     const data = await r.json();
-    if (!r.ok || data.error) throw new Error(data.error || "Неизвестная ошибка");
+    if (!r.ok || data.error) throw new Error(data.error || translate("unknown_error"));
     showError("📨 Инвойс на донат отправлен в чат с ботом");
     closeDonateModal();
     input.value = "";
   } catch (e) {
-    showError("Ошибка отправки инвойса: " + e.message);
+    showError(translate("invoice_error_prefix") + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "❤️ Задонатить";
+    btnText.textContent = translate("donate_button_action");
   }
 }
 
@@ -1826,12 +1892,13 @@ async function submitAd() {
   const title = document.getElementById("adFormTitle").value.trim();
   const impressions = parseInt(document.getElementById("adFormImpressions").value, 10);
 
-  if (!mediaUrl) return showError("Укажите ссылку на картинку/видео");
-  if (!adSelectedPayment) return showError("Выберите способ оплаты");
+  if (!mediaUrl) return showError(translate("media_url_required"));
+  if (!adSelectedPayment) return showError(translate("payment_method_required"));
 
   const btn = document.getElementById("adSubmitBtn");
+  const btnText = document.getElementById("adSubmitText");
   btn.disabled = true;
-  btn.textContent = "Отправляем...";
+  btnText.textContent = translate("sending_text");
 
   try {
     const r = await fetch("/submit-ad", {
@@ -1843,7 +1910,7 @@ async function submitAd() {
       }),
     });
     const data = await r.json();
-    if (!r.ok || data.error) throw new Error(data.error || "Неизвестная ошибка");
+    if (!r.ok || data.error) throw new Error(data.error || translate("unknown_error"));
 
     if (data.method === "stars") {
       showError("📨 Инвойс отправлен в чат с ботом — оплатите там");
@@ -1859,18 +1926,19 @@ async function submitAd() {
       document.getElementById("advertiseTonSheet").hidden = false;
     }
   } catch (e) {
-    showError("Ошибка: " + e.message);
+    showError(translate("generic_error_prefix") + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Оформить заявку";
+    btnText.textContent = translate("submit_ad_button");
   }
 }
 
 async function confirmTonPayment() {
   if (!pendingAdId) return;
   const btn = document.getElementById("adTonConfirmBtn");
+  const btnText = document.getElementById("tonPaidText");
   btn.disabled = true;
-  btn.textContent = "Отправляем...";
+  btnText.textContent = translate("sending_text");
   try {
     const r = await fetch("/confirm-ton-payment", {
       method: "POST",
@@ -1878,14 +1946,14 @@ async function confirmTonPayment() {
       body: JSON.stringify({ adId: pendingAdId }),
     });
     const data = await r.json();
-    if (!r.ok || data.error) throw new Error(data.error || "Неизвестная ошибка");
+    if (!r.ok || data.error) throw new Error(data.error || translate("unknown_error"));
     showError("✅ Спасибо! Заявка отправлена на проверку — вам напишут после сверки платежа");
     closeAdvertiseModal();
   } catch (e) {
-    showError("Ошибка: " + e.message);
+    showError(translate("generic_error_prefix") + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "✅ Я оплатил";
+    btnText.textContent = translate("ton_paid_button");
   }
 }
 
