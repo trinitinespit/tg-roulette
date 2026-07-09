@@ -698,7 +698,7 @@ html, body {
 
     <p class="disclaimer">
       <span id="disclaimerPrefix">Используя видеочат, вы соглашаетесь с</span> <span id="rulesLink" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span> <span id="andWord">и</span> <span id="privacyLink" onclick="openPrivacyModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">политикой конфиденциальности</span>.<br>
-      Нарушители будут заблокированы.
+      <span id="violatorsBanned">Нарушители будут заблокированы.</span>
     </p>
 
   </div>
@@ -801,8 +801,8 @@ html, body {
 <!-- Попап правил -->
 <div class="modal-backdrop" id="rulesModal" hidden onclick="closeRulesModal(event)">
   <div class="modal-sheet" style="max-height:80vh;overflow-y:auto;">
-    <div class="modal-title">Правила Spinny</div>
-    <div style="font-size:14px;line-height:1.7;color:#cbd5e1;">
+    <div class="modal-title" id="rulesModalTitle">Правила Spinny</div>
+    <div id="rulesModalBody" style="font-size:14px;line-height:1.7;color:#cbd5e1;">
       <p style="margin-bottom:10px;">Добро пожаловать в Spinny — случайный видеочат для общения с людьми со всего мира. Пожалуйста, соблюдайте правила сообщества:</p>
       <p style="margin-bottom:8px;">🚫 <b style="color:#fff;">Запрещено:</b></p>
       <ul style="padding-left:18px;margin-bottom:12px;">
@@ -828,7 +828,7 @@ html, body {
 <!-- Попап политики конфиденциальности -->
 <div class="modal-backdrop" id="privacyModal" hidden onclick="closePrivacyModal(event)">
   <div class="modal-sheet" style="max-height:80vh;overflow-y:auto;">
-    <div class="modal-title">Политика конфиденциальности</div>
+    <div class="modal-title" id="privacyModalTitle">Политика конфиденциальности</div>
     <div style="font-size:13px;line-height:1.7;color:#cbd5e1;">
       <p style="margin-bottom:10px;"><b style="color:#fff;">Какие данные мы собираем:</b> ваш Telegram ID, имя пользователя, язык интерфейса, пол (если указали) и статус Premium. Видео и аудио во время звонков передаются напрямую между вами и собеседником (peer-to-peer) или через TURN-сервер-ретранслятор и не записываются нами.</p>
       <p style="margin-bottom:10px;"><b style="color:#fff;">Скриншоты при жалобах:</b> если вы или ваш собеседник нажимаете «Пожаловаться», делается один кадр с видео для автоматической и, при необходимости, ручной проверки на нарушение правил. Хранится вместе с записью о жалобе.</p>
@@ -1065,6 +1065,65 @@ for (const lang in TRANSLATIONS_EXTRA2) {
   Object.assign(TRANSLATIONS[lang] || (TRANSLATIONS[lang] = {}), TRANSLATIONS_EXTRA2[lang]);
 }
 
+const TRANSLATIONS_EXTRA3 = {
+  ru: { violators_banned:"Нарушители будут заблокированы.", looking_for_title:"Ищу собеседника", want_any:"Любой", want_male:"Мужчину", want_female:"Женщину", rules_title:"Правила Spinny", privacy_title:"Политика конфиденциальности" },
+  en: { violators_banned:"Violators will be banned.", looking_for_title:"Looking for a partner", want_any:"Anyone", want_male:"Man", want_female:"Woman", rules_title:"Spinny Rules", privacy_title:"Privacy Policy" },
+  es: { violators_banned:"Los infractores serán bloqueados.", looking_for_title:"Buscando compañero", want_any:"Cualquiera", want_male:"Hombre", want_female:"Mujer", rules_title:"Reglas de Spinny", privacy_title:"Política de privacidad" },
+  tr: { violators_banned:"Kural ihlal edenler engellenir.", looking_for_title:"Sohbet arkadaşı arıyorum", want_any:"Herhangi biri", want_male:"Erkek", want_female:"Kadın", rules_title:"Spinny Kuralları", privacy_title:"Gizlilik Politikası" },
+  it: { violators_banned:"I trasgressori verranno bloccati.", looking_for_title:"Cerco un interlocutore", want_any:"Chiunque", want_male:"Uomo", want_female:"Donna", rules_title:"Regole di Spinny", privacy_title:"Informativa sulla privacy" },
+  zh: { violators_banned:"违规者将被封禁。", looking_for_title:"寻找聊天对象", want_any:"任何人", want_male:"男性", want_female:"女性", rules_title:"Spinny 规则", privacy_title:"隐私政策" },
+  ar: { violators_banned:"سيتم حظر المخالفين.", looking_for_title:"أبحث عن شريك", want_any:"أي شخص", want_male:"رجل", want_female:"امرأة", rules_title:"قواعد Spinny", privacy_title:"سياسة الخصوصية" },
+  hi: { violators_banned:"नियम तोड़ने वालों को ब्लॉक कर दिया जाएगा।", looking_for_title:"साथी की तलाश", want_any:"कोई भी", want_male:"पुरुष", want_female:"महिला", rules_title:"Spinny के नियम", privacy_title:"गोपनीयता नीति" },
+  ja: { violators_banned:"違反者はブロックされます。", looking_for_title:"相手を探しています", want_any:"誰でも", want_male:"男性", want_female:"女性", rules_title:"Spinnyのルール", privacy_title:"プライバシーポリシー" },
+  fr: { violators_banned:"Les contrevenants seront bannis.", looking_for_title:"Je cherche un interlocuteur", want_any:"N'importe qui", want_male:"Homme", want_female:"Femme", rules_title:"Règles de Spinny", privacy_title:"Politique de confidentialité" },
+  de: { violators_banned:"Regelverstöße führen zur Sperrung.", looking_for_title:"Gesprächspartner gesucht", want_any:"Beliebig", want_male:"Mann", want_female:"Frau", rules_title:"Spinny-Regeln", privacy_title:"Datenschutzrichtlinie" },
+};
+for (const lang in TRANSLATIONS_EXTRA3) {
+  Object.assign(TRANSLATIONS[lang] || (TRANSLATIONS[lang] = {}), TRANSLATIONS_EXTRA3[lang]);
+}
+
+// Полный текст правил на 11 языках (не юридический документ — обычные
+// гайдлайны сообщества, поэтому переводим целиком, в отличие от политики
+// конфиденциальности).
+const RULES_CONTENT = {
+  ru: { intro:"Добро пожаловать в Spinny — случайный видеочат для общения с людьми со всего мира. Пожалуйста, соблюдайте правила сообщества:", prohibited_title:"Запрещено:", p1:"Обнажение и сексуальный контент", p2:"Оскорбления, угрозы, язык ненависти", p3_pre:"Контент с участием несовершеннолетних — ", p3_bold:"немедленный бан", p4:"Спам, реклама, попрошайничество", p5:"Запись собеседника без его согласия", p6:"Публикация личных данных других пользователей", respect_title:"Уважайте других:", r1:"Общайтесь вежливо и доброжелательно", r2:'Нажмите "Дальше" если собеседник вам не подходит', r3:"Используйте кнопку жалобы 🚩 если кто-то нарушает правила", footer:"Нарушение правил приводит к блокировке аккаунта. Мы оставляем за собой право блокировать пользователей без предупреждения за серьёзные нарушения." },
+  en: { intro:"Welcome to Spinny — a random video chat for meeting people from around the world. Please follow the community rules:", prohibited_title:"Prohibited:", p1:"Nudity and sexual content", p2:"Insults, threats, hate speech", p3_pre:"Content involving minors — ", p3_bold:"immediate ban", p4:"Spam, advertising, begging", p5:"Recording your partner without consent", p6:"Sharing other users' personal information", respect_title:"Respect others:", r1:"Communicate politely and kindly", r2:'Tap "Next" if your partner isn\'t a good match', r3:"Use the report button 🚩 if someone breaks the rules", footer:"Breaking the rules leads to an account ban. We reserve the right to ban users without warning for serious violations." },
+  es: { intro:"Bienvenido a Spinny, un videochat aleatorio para conocer gente de todo el mundo. Por favor, respeta las reglas de la comunidad:", prohibited_title:"Prohibido:", p1:"Desnudez y contenido sexual", p2:"Insultos, amenazas, discurso de odio", p3_pre:"Contenido con menores — ", p3_bold:"bloqueo inmediato", p4:"Spam, publicidad, mendicidad", p5:"Grabar a tu interlocutor sin su consentimiento", p6:"Publicar datos personales de otros usuarios", respect_title:"Respeta a los demás:", r1:"Comunícate con cortesía y amabilidad", r2:'Pulsa "Siguiente" si tu interlocutor no te conviene', r3:"Usa el botón de denuncia 🚩 si alguien infringe las reglas", footer:"Infringir las reglas conlleva el bloqueo de la cuenta. Nos reservamos el derecho de bloquear usuarios sin previo aviso por infracciones graves." },
+  tr: { intro:"Spinny'ye hoş geldiniz — dünyanın her yerinden insanlarla tanışabileceğiniz rastgele bir görüntülü sohbet. Lütfen topluluk kurallarına uyun:", prohibited_title:"Yasak:", p1:"Çıplaklık ve cinsel içerik", p2:"Hakaret, tehdit, nefret söylemi", p3_pre:"Reşit olmayanları içeren içerik — ", p3_bold:"anında engelleme", p4:"Spam, reklam, dilencilik", p5:"Karşı tarafı izni olmadan kaydetme", p6:"Diğer kullanıcıların kişisel verilerini paylaşma", respect_title:"Başkalarına saygılı olun:", r1:"Kibar ve nazik iletişim kurun", r2:'Sizinle uyumlu değilse "Sonraki"ye dokunun', r3:"Biri kuralları çiğnerse şikayet butonunu 🚩 kullanın", footer:"Kuralları çiğnemek hesabınızın engellenmesine yol açar. Ciddi ihlallerde önceden uyarı yapmadan kullanıcıları engelleme hakkımızı saklı tutarız." },
+  it: { intro:"Benvenuto su Spinny — una videochat casuale per conoscere persone da tutto il mondo. Rispetta le regole della community:", prohibited_title:"Vietato:", p1:"Nudità e contenuti sessuali", p2:"Insulti, minacce, incitamento all'odio", p3_pre:"Contenuti che coinvolgono minori — ", p3_bold:"blocco immediato", p4:"Spam, pubblicità, richieste di denaro", p5:"Registrare l'interlocutore senza consenso", p6:"Pubblicare dati personali di altri utenti", respect_title:"Rispetta gli altri:", r1:"Comunica con cortesia e gentilezza", r2:'Tocca "Avanti" se l\'interlocutore non fa per te', r3:"Usa il pulsante di segnalazione 🚩 se qualcuno viola le regole", footer:"La violazione delle regole comporta il blocco dell'account. Ci riserviamo il diritto di bloccare gli utenti senza preavviso per violazioni gravi." },
+  zh: { intro:"欢迎使用 Spinny —— 一个随机视频聊天应用，让你结识世界各地的人。请遵守社区规则：", prohibited_title:"禁止：", p1:"裸露和色情内容", p2:"侮辱、威胁、仇恨言论", p3_pre:"涉及未成年人的内容 —— ", p3_bold:"立即封禁", p4:"垃圾信息、广告、乞讨", p5:"未经同意录制对方", p6:"发布他人个人信息", respect_title:"尊重他人：", r1:"礼貌友善地交流", r2:"如果不合适，请点击「下一个」", r3:"如果有人违反规则，请使用举报按钮 🚩", footer:"违反规则将导致账号封禁。对于严重违规行为，我们保留不经警告即封禁用户的权利。" },
+  ar: { intro:"مرحبًا بك في Spinny — دردشة مرئية عشوائية للتعرف على أشخاص من جميع أنحاء العالم. يرجى الالتزام بقواعد المجتمع:", prohibited_title:"ممنوع:", p1:"العري والمحتوى الجنسي", p2:"الإهانات والتهديدات وخطاب الكراهية", p3_pre:"محتوى يتعلق بالقُصَّر — ", p3_bold:"حظر فوري", p4:"الرسائل غير المرغوبة والإعلانات والتسول", p5:"تسجيل الطرف الآخر دون موافقته", p6:"نشر بيانات شخصية لمستخدمين آخرين", respect_title:"احترم الآخرين:", r1:"تواصل بأدب ولطف", r2:'اضغط "التالي" إذا لم يكن الشريك مناسبًا لك', r3:"استخدم زر الإبلاغ 🚩 إذا خالف أحدهم القواعد", footer:"مخالفة القواعد تؤدي إلى حظر الحساب. نحتفظ بالحق في حظر المستخدمين دون إشعار مسبق في حالة المخالفات الجسيمة." },
+  hi: { intro:"Spinny में आपका स्वागत है — दुनिया भर के लोगों से मिलने के लिए एक रैंडम वीडियो चैट। कृपया समुदाय के नियमों का पालन करें:", prohibited_title:"प्रतिबंधित:", p1:"नग्नता और यौन सामग्री", p2:"अपमान, धमकियाँ, घृणा फैलाने वाली भाषा", p3_pre:"नाबालिगों से जुड़ी सामग्री — ", p3_bold:"तुरंत ब्लॉक", p4:"स्पैम, विज्ञापन, भीख माँगना", p5:"सहमति के बिना साथी को रिकॉर्ड करना", p6:"अन्य उपयोगकर्ताओं की व्यक्तिगत जानकारी साझा करना", respect_title:"दूसरों का सम्मान करें:", r1:"विनम्रता और दयालुता से बातचीत करें", r2:'यदि साथी उपयुक्त न लगे तो "अगला" दबाएँ', r3:"यदि कोई नियम तोड़े तो रिपोर्ट बटन 🚩 का उपयोग करें", footer:"नियम तोड़ने पर अकाउंट ब्लॉक कर दिया जाएगा। गंभीर उल्लंघनों के लिए हम बिना चेतावनी दिए उपयोगकर्ताओं को ब्लॉक करने का अधिकार सुरक्षित रखते हैं।" },
+  ja: { intro:"Spinnyへようこそ —— 世界中の人々と出会えるランダムビデオチャットです。コミュニティルールをお守りください：", prohibited_title:"禁止事項：", p1:"裸体および性的なコンテンツ", p2:"侮辱、脅迫、ヘイトスピーチ", p3_pre:"未成年者に関するコンテンツ —— ", p3_bold:"即時ブロック", p4:"スパム、広告、物乞い行為", p5:"同意なしに相手を録画すること", p6:"他のユーザーの個人情報の公開", respect_title:"他者を尊重しましょう：", r1:"礼儀正しく親切にコミュニケーションを取りましょう", r2:"相手が合わないと感じたら「次へ」をタップしてください", r3:"誰かがルールを破った場合は報告ボタン 🚩 を使用してください", footer:"ルール違反はアカウントのブロックにつながります。重大な違反については、事前警告なしにユーザーをブロックする権利を留保します。" },
+  fr: { intro:"Bienvenue sur Spinny — un chat vidéo aléatoire pour rencontrer des gens du monde entier. Merci de respecter les règles de la communauté :", prohibited_title:"Interdit :", p1:"Nudité et contenu sexuel", p2:"Insultes, menaces, discours de haine", p3_pre:"Contenu impliquant des mineurs — ", p3_bold:"bannissement immédiat", p4:"Spam, publicité, mendicité", p5:"Enregistrer l'interlocuteur sans son consentement", p6:"Publier les données personnelles d'autres utilisateurs", respect_title:"Respectez les autres :", r1:"Communiquez avec politesse et bienveillance", r2:'Appuyez sur "Suivant" si l\'interlocuteur ne vous convient pas', r3:"Utilisez le bouton de signalement 🚩 en cas de non-respect des règles", footer:"Le non-respect des règles entraîne le bannissement du compte. Nous nous réservons le droit de bannir des utilisateurs sans avertissement en cas d'infractions graves." },
+  de: { intro:"Willkommen bei Spinny — einem zufälligen Videochat, um Menschen aus aller Welt kennenzulernen. Bitte halte dich an die Community-Regeln:", prohibited_title:"Verboten:", p1:"Nacktheit und sexuelle Inhalte", p2:"Beleidigungen, Drohungen, Hassrede", p3_pre:"Inhalte mit Minderjährigen — ", p3_bold:"sofortige Sperrung", p4:"Spam, Werbung, Bettelei", p5:"Aufnahme des Gesprächspartners ohne Zustimmung", p6:"Veröffentlichung persönlicher Daten anderer Nutzer", respect_title:"Respektiere andere:", r1:"Kommuniziere höflich und freundlich", r2:'Tippe auf "Weiter", wenn der Partner nicht passt', r3:"Nutze die Melden-Schaltfläche 🚩, wenn jemand gegen die Regeln verstößt", footer:"Regelverstöße führen zur Kontosperrung. Wir behalten uns das Recht vor, Nutzer bei schweren Verstößen ohne Vorwarnung zu sperren." },
+};
+
+function renderRules() {
+  const body = document.getElementById("rulesModalBody");
+  if (!body) return;
+  const t = RULES_CONTENT[currentLang] || RULES_CONTENT.en;
+  body.innerHTML = `
+    <p style="margin-bottom:10px;">${t.intro}</p>
+    <p style="margin-bottom:8px;">🚫 <b style="color:#fff;">${t.prohibited_title}</b></p>
+    <ul style="padding-left:18px;margin-bottom:12px;">
+      <li>${t.p1}</li>
+      <li>${t.p2}</li>
+      <li>${t.p3_pre}<b style="color:#FF3B30;">${t.p3_bold}</b></li>
+      <li>${t.p4}</li>
+      <li>${t.p5}</li>
+      <li>${t.p6}</li>
+    </ul>
+    <p style="margin-bottom:8px;">✅ <b style="color:#fff;">${t.respect_title}</b></p>
+    <ul style="padding-left:18px;margin-bottom:12px;">
+      <li>${t.r1}</li>
+      <li>${t.r2}</li>
+      <li>${t.r3}</li>
+    </ul>
+    <p style="color:#9AB2CC;font-size:12px;">${t.footer}</p>
+  `;
+}
+
 let currentLang = "ru";
 
 function translate(key) {
@@ -1142,7 +1201,6 @@ function applyLanguage(lang) {
 
   // Фильтр "Ищу" (премиум) и "Весь мир" в селекторе страны
   const genderWantTitle = document.querySelector("#genderWantSection .modal-title");
-  if (genderWantTitle) genderWantTitle.textContent = "⭐ " + translate("looking_for_label");
   const cOpt0 = document.querySelector("#cOpt0");
   if (cOpt0 && cOpt0.lastChild) cOpt0.lastChild.textContent = " " + translate("world_wide");
 
@@ -1160,6 +1218,23 @@ function applyLanguage(lang) {
     const opt = document.getElementById("adImp" + n);
     if (opt) opt.textContent = n.toLocaleString(currentLang) + " " + translate("impressions_word");
   });
+
+  const violatorsBanned = document.getElementById("violatorsBanned");
+  if (violatorsBanned) violatorsBanned.textContent = translate("violators_banned");
+  const rulesModalTitle = document.getElementById("rulesModalTitle");
+  if (rulesModalTitle) rulesModalTitle.textContent = translate("rules_title");
+  const privacyModalTitle = document.getElementById("privacyModalTitle");
+  if (privacyModalTitle) privacyModalTitle.textContent = translate("privacy_title");
+
+  if (genderWantTitle) genderWantTitle.textContent = "⭐ " + translate("looking_for_title");
+  const wOpt0 = document.querySelector("#wOpt0");
+  const wOpt1 = document.querySelector("#wOpt1");
+  const wOpt2 = document.querySelector("#wOpt2");
+  if (wOpt0 && wOpt0.lastChild) wOpt0.lastChild.textContent = " " + translate("want_any");
+  if (wOpt1 && wOpt1.lastChild) wOpt1.lastChild.textContent = " " + translate("want_male");
+  if (wOpt2 && wOpt2.lastChild) wOpt2.lastChild.textContent = " " + translate("want_female");
+
+  renderRules();
 }
 
 function detectInitialLanguage() {
