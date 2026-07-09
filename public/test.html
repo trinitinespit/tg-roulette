@@ -363,30 +363,14 @@ html, body {
   background: var(--blue-lt);
 }
 
-.search-dice-row { display: flex; gap: 14px; }
-.search-dice {
-  font-size: 40px;
-  display: inline-block;
-  animation: diceTumble 1.1s ease-in-out infinite;
+.search-spinner {
+  width: 52px; height: 52px;
+  border: 3px solid rgba(255,255,255,0.12);
+  border-top-color: var(--blue-lt);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
 }
-@keyframes diceTumble {
-  0%   { transform: rotate(0deg) translateY(0); }
-  25%  { transform: rotate(90deg) translateY(-10px); }
-  50%  { transform: rotate(180deg) translateY(0); }
-  75%  { transform: rotate(270deg) translateY(-10px); }
-  100% { transform: rotate(360deg) translateY(0); }
-}
-
-.search-stop-btn {
-  margin-top: 10px;
-  background: rgba(255,59,48,0.14);
-  border: 1px solid rgba(255,59,48,0.4);
-  color: #FF6B60;
-  font-size: 14px; font-weight: 700;
-  padding: 10px 22px;
-  border-radius: 999px;
-  display: flex; align-items: center; gap: 6px;
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .search-label {
   font-size: 15px; color: var(--text-dim); font-weight: 500;
@@ -614,7 +598,7 @@ html, body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .online-dot, .search-dice, .flying-emoji { animation: none; }
+  .online-dot, .search-spinner, .flying-emoji { animation: none; }
 }
 </style>
 </head>
@@ -747,13 +731,8 @@ html, body {
   
   <!-- Поверх видео во время поиска -->
   <div class="search-overlay" id="searchOverlay">
-    <div class="search-dice-row">
-      <span class="search-dice" style="animation-delay:0s;">🎲</span>
-      <span class="search-dice" style="animation-delay:0.15s;">🎲</span>
-      <span class="search-dice" style="animation-delay:0.3s;">🎲</span>
-    </div>
+    <div class="search-spinner"></div>
     <div class="search-label">Ищем собеседника…</div>
-    <button class="search-stop-btn" onclick="stopSearchAndGoHome()">⏹ <span id="searchStopText">Стоп</span></button>
   </div>
 
   <!-- Обязательный просмотр рекламы (картинка или видео) с таймером как на YouTube -->
@@ -802,6 +781,8 @@ html, body {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
         <span id="btnNextText">Дальше</span>
       </button>
+      <!-- Стоп: прерывает и поиск, и сам звонок, возвращает на главный экран -->
+      <button class="btn-icon" id="btnStop" title="Стоп" onclick="stopSearchAndGoHome()">⏹</button>
       <!-- Блок -->
       <button class="btn-icon" id="btnBlock" title="Заблокировать" onclick="doBlock()">🚫</button>
     </div>
@@ -1346,8 +1327,8 @@ function applyLanguage(lang) {
   renderRules();
   renderPrivacy();
   renderAdSpecs();
-  const searchStopText = document.getElementById("searchStopText");
-  if (searchStopText) searchStopText.textContent = STOP_BUTTON_TEXT[currentLang] || STOP_BUTTON_TEXT.en;
+  const searchStopBtn = document.getElementById("btnStop");
+  if (searchStopBtn) searchStopBtn.title = STOP_BUTTON_TEXT[currentLang] || STOP_BUTTON_TEXT.en;
 
   // Названия опций в модалке страны (сами значения countryMap фиксированы,
   // myCountry тут не участвует — трогать её тут небезопасно, см. selectLanguage)
