@@ -131,6 +131,7 @@ async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reminder_stage INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reminders_blocked BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS source_param TEXT;
     ALTER TABLE bans ADD COLUMN IF NOT EXISTS evidence_image TEXT;
     ALTER TABLE ads ADD COLUMN IF NOT EXISTS advertiser_tg_id BIGINT;
     ALTER TABLE ads ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved'; -- pending_payment | pending_review | approved | rejected
@@ -190,16 +191,17 @@ async function banUser(telegramId, reason, evidenceImage = null) {
 async function upsertUser(user) {
   if (!db || !user) return;
   await db.query(`
-    INSERT INTO users (telegram_id, username, first_name, language_code, last_seen_at)
-    VALUES ($1, $2, $3, $4, NOW())
+    INSERT INTO users (telegram_id, username, first_name, language_code, source_param, last_seen_at)
+    VALUES ($1, $2, $3, $4, $5, NOW())
     ON CONFLICT (telegram_id) DO UPDATE SET
       username        = EXCLUDED.username,
       first_name      = EXCLUDED.first_name,
       language_code   = EXCLUDED.language_code,
+      source_param    = COALESCE(users.source_param, EXCLUDED.source_param),
       last_seen_at    = NOW(),
       reminder_stage  = 0,
       last_reminder_at = NULL
-  `, [user.id, user.username || null, user.first_name || null, user.language_code || null]);
+  `, [user.id, user.username || null, user.first_name || null, user.language_code || null, user._startParam || null]);
 }
 
 async function isPremium(telegramId) {
@@ -335,6 +337,7 @@ function verifyTelegramInitData(initData, botToken) {
     const params = new URLSearchParams(initData);
     const hash = params.get("hash");
     if (!hash) return null;
+    const startParam = params.get("start_param") || null;
     params.delete("hash");
 
     const dataCheckString = [...params.entries()]
@@ -349,7 +352,9 @@ function verifyTelegramInitData(initData, botToken) {
 
     const userJson = params.get("user");
     if (!userJson) return null;
-    return JSON.parse(userJson);
+    const user = JSON.parse(userJson);
+    user._startParam = startParam; // куда пришёл пользователь — источник трафика
+    return user;
   } catch (e) {
     console.warn("[auth] ошибка разбора initData:", e.message);
     return null;
@@ -719,7 +724,7 @@ app.post("/tg-webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: userId,
-        photo: "https://spinnyapp.ru/spinny_logo.png?v=2",
+        photo: "https://spinnyapp.ru/spinny_logo.png?v=3",
         caption: g.text(firstName),
         parse_mode: "Markdown",
         reply_markup: {
@@ -853,7 +858,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   if (!db) return res.status(503).send("БД недоступна");
 
   try {
-    const [bans, reports, users, unban, blocks, ads, transactions] = await Promise.all([
+    const [bans, reports, users, unban, blocks, ads, transactions, sources] = await Promise.all([
     db.query(`SELECT b.telegram_id, b.reason, b.banned_at,
               u.username, u.first_name
               FROM bans b LEFT JOIN users u ON u.telegram_id = b.telegram_id
@@ -865,7 +870,7 @@ app.get("/admin", adminAuth, async (req, res) => {
               LEFT JOIN users ru ON ru.telegram_id = r.reporter_tg_id
               LEFT JOIN users ou ON ou.telegram_id = r.offender_tg_id
               ORDER BY r.created_at DESC LIMIT 100`),
-    db.query(`SELECT telegram_id, username, first_name, is_premium, premium_until, gender, last_seen_at
+    db.query(`SELECT telegram_id, username, first_name, is_premium, premium_until, gender, last_seen_at, source_param
               FROM users ORDER BY last_seen_at DESC LIMIT 100`),
     db.query(`SELECT ur.*, u.username FROM unban_requests ur
               LEFT JOIN users u ON u.telegram_id = ur.telegram_id
@@ -880,6 +885,8 @@ app.get("/admin", adminAuth, async (req, res) => {
     db.query(`SELECT t.*, u.username FROM transactions t
               LEFT JOIN users u ON u.telegram_id = t.telegram_id
               ORDER BY t.created_at DESC LIMIT 300`),
+    db.query(`SELECT COALESCE(source_param, 'органика') AS source, COUNT(*) AS cnt
+              FROM users GROUP BY source ORDER BY cnt DESC LIMIT 50`),
   ]);
 
   // Группируем доходы по категориям и валюте для круговых диаграмм
@@ -1047,19 +1054,40 @@ app.get("/admin", adminAuth, async (req, res) => {
 
   <!-- Пользователи -->
   <div class="section" id="tab-users">
+    <div class="panel-card" style="margin-bottom:20px;">
+      <div class="panel-title" style="margin-bottom:10px;">🔗 Создать ссылку с меткой источника</div>
+      <div class="action-row">
+        <input type="text" id="sourceLabelInput" placeholder="Метка (например: tiktok_video1)" style="width:260px;"/>
+        <button class="btn" onclick="generateSourceLink()">Сгенерировать</button>
+      </div>
+      <div id="generatedLinkBox" style="display:none;margin-top:10px;">
+        <input type="text" id="generatedLinkOutput" readonly style="width:100%;box-sizing:border-box;background:#0f172a;border:1px solid #334155;color:#4ade80;padding:10px 12px;border-radius:8px;font-family:monospace;font-size:13px;"/>
+        <button class="btn" style="margin-top:8px;" onclick="copyGeneratedLink()">📋 Скопировать</button>
+      </div>
+    </div>
+
+    <div class="panel-card" style="margin-bottom:20px;">
+      <div class="panel-title" style="margin-bottom:10px;">📊 Пользователи по источникам</div>
+      <table>
+        <tr><th>Источник</th><th>Пользователей</th></tr>
+        ${sources.rows.map(s => `<tr><td>${s.source}</td><td>${s.cnt}</td></tr>`).join('')}
+      </table>
+    </div>
+
     <div class="action-row">
       <input type="number" id="premiumIdInput" placeholder="Telegram ID"/>
       <input type="number" id="premiumDaysInput" placeholder="Дней" style="width:100px;" value="30"/>
       <button class="btn" onclick="manualGrantPremium()">Выдать Premium</button>
     </div>
     <table>
-      <tr><th>TG ID</th><th>Имя</th><th>Статус</th><th>Пол</th><th>Последний вход</th><th>Действие</th></tr>
+      <tr><th>TG ID</th><th>Имя</th><th>Статус</th><th>Пол</th><th>Источник</th><th>Последний вход</th><th>Действие</th></tr>
       ${users.rows.map(u => `
       <tr>
         <td>${u.telegram_id}</td>
         <td>${u.first_name || ''} @${u.username || '—'}</td>
         <td>${u.is_premium ? '<span class="premium-badge">⭐ Premium</span>' : 'Free'}</td>
         <td>${u.gender || '—'}</td>
+        <td style="font-size:12px;color:#64748b;">${u.source_param || 'органика'}</td>
         <td>${new Date(u.last_seen_at).toLocaleString('ru')}</td>
         <td>
           ${u.is_premium
@@ -1268,6 +1296,20 @@ async function manualBanFromUsers(id) {
   });
   if (r.ok) { alert('Забанен'); location.reload(); }
   else alert('Ошибка: ' + await r.text());
+}
+
+function generateSourceLink() {
+  const label = document.getElementById('sourceLabelInput').value.trim();
+  if (!label) return alert('Введите метку');
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(label)) return alert('Метка: только латинские буквы, цифры, _ и -, до 64 символов, без пробелов');
+  const link = \`https://t.me/SpinnyChat_bot/app?startapp=\${label}\`;
+  document.getElementById('generatedLinkOutput').value = link;
+  document.getElementById('generatedLinkBox').style.display = 'block';
+}
+function copyGeneratedLink() {
+  const input = document.getElementById('generatedLinkOutput');
+  input.select();
+  navigator.clipboard.writeText(input.value).then(() => alert('Скопировано!'));
 }
 
 async function manualGrantPremium(idFromRow) {
