@@ -4,7 +4,6 @@ const path = require("path");
 const crypto = require("crypto");
 const { Pool } = require("pg");
 const { Server } = require("socket.io");
-const maxmind = require("maxmind");
 
 console.log("[env] BOT_TOKEN:", process.env.TELEGRAM_BOT_TOKEN ? "SET" : "NOT SET");
 console.log("[env] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
@@ -15,51 +14,10 @@ console.log("[env] TURN_SECRET:", process.env.TURN_SECRET ? "SET" : "NOT SET");
 console.log("[env] SIGHTENGINE_API_USER:", process.env.SIGHTENGINE_API_USER ? "SET" : "NOT SET");
 console.log("[env] SIGHTENGINE_API_SECRET:", process.env.SIGHTENGINE_API_SECRET ? "SET" : "NOT SET");
 
-// ---------- GeoIP (определение страны по IP через MaxMind GeoLite2) ----------
-// Используем geolite2-redist — он сам скачивает базу с GitHub в фоне при
-// первом запуске, БЕЗ регистрации на сайте MaxMind и без лицензионного ключа.
-// Первый старт сервера может занять чуть дольше (качается файл), дальше —
-// быстро, база кешируется на диске. Без сети наружу (например, если хостинг
-// блокирует исходящие запросы к GitHub) база не скачается, и поиск по стране
-// тихо отключится — сервер при этом не упадёт.
-const geolite2 = require("geolite2-redist");
-let geoLookup = null;
-
-(async () => {
-  try {
-    geoLookup = await geolite2.open("GeoLite2-Country", (dbPath) => maxmind.open(dbPath));
-    console.log("[geoip] база GeoLite2-Country загружена (geolite2-redist)");
-  } catch (e) {
-    console.warn("[geoip] не удалось загрузить базу (" + e.message + ") — поиск по странам работать не будет");
-  }
-})();
-
-function getClientIp(socket) {
-  const h = socket.handshake.headers;
-  // Разные прокси называют заголовок с реальным IP клиента по-разному —
-  // проверяем по очереди самые распространённые варианты
-  const candidates = [
-    h["x-forwarded-for"],
-    h["x-real-ip"],
-    h["cf-connecting-ip"],
-    h["true-client-ip"],
-    h["x-client-ip"],
-  ];
-  for (const c of candidates) {
-    if (c) return String(c).split(",")[0].trim();
-  }
-  return socket.handshake.address;
-}
-
-function getCountryFromIp(ip) {
-  if (!geoLookup || !ip) return null;
-  try {
-    const result = geoLookup.get(ip);
-    return result?.country?.iso_code || null;
-  } catch (e) {
-    return null;
-  }
-}
+// GeoIP по IP на сервере не используется — прокси Amvera подменяет реальный IP
+// клиента на внутренний (10.244.x.x) ещё до нашего процесса, так что серверный
+// MaxMind/geolite2-redist был бесполезен. Страну теперь определяет сам браузер
+// клиента через ipapi.co и присылает нам событием "report-my-country".
 
 const app = express();
 
@@ -1859,17 +1817,18 @@ function clearMatch(socketId, reason = "unknown") {
 io.on("connection", (socket) => {
   console.log("[connect]", socket.id);
 
-  const clientIp = getClientIp(socket);
-  const country = getCountryFromIp(clientIp);
-  countryOf.set(socket.id, country);
-  console.log("[geoip]", socket.id, "| ip:", clientIp, "| страна:", country || "не определена");
-  if (!country) {
-    // Диагностика: IP похож на приватный/внутренний — печатаем все заголовки,
-    // чтобы понять, как Amvera реально прокидывает адрес клиента (если вообще)
-    console.log("[geoip-debug]", socket.id, "| все заголовки:", JSON.stringify(socket.handshake.headers));
-    console.log("[geoip-debug]", socket.id, "| handshake.address:", socket.handshake.address);
-  }
-  socket.emit("your-country", { country });
+  // Страну теперь определяет сам браузер клиента через публичный сервис
+  // (ipapi.co) — серверный GeoIP по IP не сработал из-за внутреннего прокси
+  // Amvera, который подменяет x-forwarded-for/x-real-ip на приватный адрес
+  // (10.244.x.x) ещё до того, как запрос доходит до нашего процесса.
+  countryOf.set(socket.id, null); // пока клиент не сообщит — считаем неизвестной
+
+  socket.on("report-my-country", ({ country }) => {
+    if (isRateLimited(socket.id, "report-my-country", 5, 10000)) return;
+    const clean = typeof country === "string" && /^[A-Z]{2}$/.test(country) ? country : null;
+    countryOf.set(socket.id, clean);
+    console.log("[geoip]", socket.id, "| страна от клиента:", clean || "не определена");
+  });
 
   socket.on("set-country-filter", ({ country: preferred }) => {
     if (isRateLimited(socket.id, "set-country-filter", 10, 10000)) return;
