@@ -594,6 +594,122 @@ app.post("/tg-webhook", async (req, res) => {
         text: (name) => `👋 ¡Hola, ${name}!\n\n🎲 *Spinny* es un videochat aleatorio directo en Telegram.\n\nToca el botón de abajo, permite el acceso a la cámara — y en segundos estarás conectado con alguien nuevo de cualquier parte del mundo.\n\n• 🌍 Emparejamiento por idioma\n• ❤️ Reacciones durante la llamada\n• ⭐ Premium con filtro de género\n• 🚩 Sistema de moderación`,
         button: "🎲 Abrir Spinny",
       },
+      it: {
+        text: (name) => `👋 Ciao, ${name}!\n\n🎲 *Spinny* è una videochat casuale direttamente in Telegram.\n\nTocca il pulsante qui sotto, consenti l'accesso alla fotocamera — e in pochi secondi sarai connesso con qualcuno di nuovo da qualsiasi parte del mondo.\n\n• 🌍 Abbinamento per lingua\n• ❤️ Reazioni durante la chiamata\n• ⭐ Premium con filtro di genere\n• 🚩 Sistema di moderazione`,
+        button: "🎲 Apri Spinny",
+      },
+      zh: {
+        text: (name) => `👋 你好，${name}！\n\n🎲 *Spinny* 是直接在 Telegram 内的随机视频聊天。\n\n点击下方按钮，允许摄像头访问——几秒钟内即可与来自世界各地的新朋友建立联系。\n\n• 🌍 按语言匹配\n• ❤️ 通话中的表情反应\n• ⭐ 带性别筛选的 Premium\n• 🚩 审核系统`,
+        button: "🎲 打开 Spinny",
+      },
+      ar: {
+        text: (name) => `👋 مرحباً ${name}!\n\n🎲 *Spinny* هو دردشة فيديو عشوائية مباشرة داخل تيليجرام.\n\nاضغط على الزر أدناه، اسمح بالوصول إلى الكاميرا — وخلال ثوانٍ ستكون على تواصل مع شخص جديد من أي مكان في العالم.\n\n• 🌍 مطابقة حسب اللغة\n• ❤️ تفاعلات أثناء المكالمة\n• ⭐ Premium مع فلتر الجنس\n• 🚩 نظام الإشراف`,
+        button: "🎲 افتح Spinny",
+      },
+      hi: {
+        text: (name) => `👋 नमस्ते, ${name}!\n\n🎲 *Spinny* सीधे Telegram में एक रैंडम वीडियो चैट है।\n\nनीचे दिए बटन को दबाएं, कैमरा एक्सेस की अनुमति दें — और कुछ ही सेकंड में आप दुनिया के किसी भी कोने से किसी नए व्यक्ति से जुड़ जाएंगे।\n\n• 🌍 भाषा के अनुसार मैचिंग\n• ❤️ कॉल के दौरान रिएक्शन\n• ⭐ जेंडर फ़िल्टर के साथ Premium\n• 🚩 मॉडरेशन सिस्टम`,
+        button: "🎲 Spinny खोलें",
+      },
+      ja: {
+        text: (name) => `👋 こんにちは、${name}さん！\n\n🎲 *Spinny* はTelegram内で使える、ランダムなビデオチャットです。\n\n下のボタンをタップして、カメラへのアクセスを許可すると、数秒で世界中の新しい相手とつながります。\n\n• 🌍 言語によるマッチング\n• ❤️ 通話中のリアクション\n• ⭐ 性別フィルター付きPremium\n• 🚩 モデレーションシステム`,
+        button: "🎲 Spinnyを開く",
+      },
+      fr: {
+        text: (name) => `👋 Salut, ${name} !\n\n🎲 *Spinny* est un videochat aléatoire directement dans Telegram.\n\nAppuie sur le bouton ci-dessous, autorise l'accès à la caméra — et en quelques secondes tu seras en contact avec quelqu'un de nouveau, n'importe où dans le monde.\n\n• 🌍 Appariement par langue\n• ❤️ Réactions pendant l'appel\n• ⭐ Premium avec filtre de genre\n• 🚩 Système de modération`,
+        button: "🎲 Ouvrir Spinny",
+      },
+      pt: {
+        text: (name) => `👋 Olá, ${name}!\n\n🎲 *Spinny* é um videochat aleatório direto no Telegram.\n\nToque no botão abaixo, permita o acesso à câmera — e em segundos você estará conectado com alguém novo de qualquer parte do mundo.\n\n• 🌍 Correspondência por idioma\n• ❤️ Reações durante a chamada\n• ⭐ Premium com filtro de gênero\n• 🚩 Sistema de moderação`,
+        button: "🎲 Abrir Spinny",
+      },
+      ko: {
+        text: (name) => `👋 안녕하세요, ${name}님!\n\n🎲 *Spinny*는 텔레그램 안에서 바로 이용하는 랜덤 영상 채팅입니다.\n\n아래 버튼을 누르고 카메라 접근을 허용하면 몇 초 안에 전 세계 새로운 사람과 연결됩니다.\n\n• 🌍 언어별 매칭\n• ❤️ 통화 중 리액션\n• ⭐ 성별 필터가 있는 프리미엄\n• 🚩 모더레이션 시스템`,
+        button: "🎲 Spinny 열기",
+      },
+      id: {
+        text: (name) => `👋 Hai, ${name}!\n\n🎲 *Spinny* adalah video chat acak langsung di Telegram.\n\nTekan tombol di bawah, izinkan akses kamera — dan dalam hitungan detik kamu akan terhubung dengan orang baru dari seluruh dunia.\n\n• 🌍 Pencocokan berdasarkan bahasa\n• ❤️ Reaksi selama panggilan\n• ⭐ Premium dengan filter gender\n• 🚩 Sistem moderasi`,
+        button: "🎲 Buka Spinny",
+      },
+      uk: {
+        text: (name) => `👋 Привіт, ${name}!\n\n🎲 *Spinny* — випадковий відеочат прямо в Telegram.\n\nНатисни кнопку нижче, дозволь доступ до камери — і за кілька секунд опинишся на зв'язку з новим співрозмовником з будь-якої точки світу.\n\n• 🌍 Підбір за мовою\n• ❤️ Реакції під час дзвінка\n• ⭐ Premium з фільтром за статтю\n• 🚩 Система модерації`,
+        button: "🎲 Відкрити Spinny",
+      },
+      pl: {
+        text: (name) => `👋 Cześć, ${name}!\n\n🎲 *Spinny* to losowy wideoczat prosto w Telegramie.\n\nNaciśnij przycisk poniżej, zezwól na dostęp do kamery — a w kilka sekund połączysz się z nową osobą z dowolnego miejsca na świecie.\n\n• 🌍 Dopasowanie według języka\n• ❤️ Reakcje podczas rozmowy\n• ⭐ Premium z filtrem płci\n• 🚩 System moderacji`,
+        button: "🎲 Otwórz Spinny",
+      },
+      nl: {
+        text: (name) => `👋 Hoi, ${name}!\n\n🎲 *Spinny* is een willekeurige videochat rechtstreeks in Telegram.\n\nTik op de knop hieronder, geef cameratoegang — en binnen enkele seconden ben je verbonden met iemand nieuws van waar dan ook ter wereld.\n\n• 🌍 Matching op taal\n• ❤️ Reacties tijdens het gesprek\n• ⭐ Premium met genderfilter\n• 🚩 Moderatiesysteem`,
+        button: "🎲 Spinny openen",
+      },
+      fa: {
+        text: (name) => `👋 سلام ${name}!\n\n🎲 *Spinny* یک ویدیوچت تصادفی مستقیماً در تلگرام است.\n\nروی دکمه زیر بزن، دسترسی به دوربین را مجاز کن — و در چند ثانیه با فردی جدید از هر نقطه جهان در ارتباط خواهی بود.\n\n• 🌍 تطبیق بر اساس زبان\n• ❤️ واکنش‌ها در حین تماس\n• ⭐ پرمیوم با فیلتر جنسیت\n• 🚩 سیستم نظارت`,
+        button: "🎲 باز کردن Spinny",
+      },
+      th: {
+        text: (name) => `👋 สวัสดี ${name}!\n\n🎲 *Spinny* คือวิดีโอแชทแบบสุ่มโดยตรงใน Telegram\n\nแตะปุ่มด้านล่าง อนุญาตให้เข้าถึงกล้อง — และในไม่กี่วินาทีคุณจะได้เชื่อมต่อกับคนใหม่จากทั่วโลก\n\n• 🌍 จับคู่ตามภาษา\n• ❤️ รีแอคชันระหว่างการโทร\n• ⭐ Premium พร้อมตัวกรองเพศ\n• 🚩 ระบบตรวจสอบ`,
+        button: "🎲 เปิด Spinny",
+      },
+      vi: {
+        text: (name) => `👋 Chào ${name}!\n\n🎲 *Spinny* là video chat ngẫu nhiên ngay trong Telegram.\n\nNhấn nút bên dưới, cho phép truy cập camera — và chỉ trong vài giây bạn sẽ kết nối với người mới từ khắp nơi trên thế giới.\n\n• 🌍 Ghép đôi theo ngôn ngữ\n• ❤️ Biểu cảm trong cuộc gọi\n• ⭐ Premium với bộ lọc giới tính\n• 🚩 Hệ thống kiểm duyệt`,
+        button: "🎲 Mở Spinny",
+      },
+      ms: {
+        text: (name) => `👋 Hai, ${name}!\n\n🎲 *Spinny* ialah video chat rawak terus dalam Telegram.\n\nTekan butang di bawah, benarkan akses kamera — dan dalam beberapa saat anda akan berhubung dengan seseorang baharu dari mana-mana pelosok dunia.\n\n• 🌍 Padanan mengikut bahasa\n• ❤️ Reaksi semasa panggilan\n• ⭐ Premium dengan penapis jantina\n• 🚩 Sistem moderasi`,
+        button: "🎲 Buka Spinny",
+      },
+      bn: {
+        text: (name) => `👋 হ্যালো, ${name}!\n\n🎲 *Spinny* হলো টেলিগ্রামের মধ্যেই একটি র‌্যান্ডম ভিডিও চ্যাট।\n\nনিচের বোতামে চাপুন, ক্যামেরা অ্যাক্সেসের অনুমতি দিন — আর কয়েক সেকেন্ডের মধ্যে বিশ্বের যেকোনো প্রান্তের নতুন কারো সাথে যুক্ত হয়ে যাবেন।\n\n• 🌍 ভাষা অনুযায়ী মিলকরণ\n• ❤️ কলের সময় রিয়্যাকশন\n• ⭐ জেন্ডার ফিল্টার সহ প্রিমিয়াম\n• 🚩 মডারেশন সিস্টেম`,
+        button: "🎲 Spinny খুলুন",
+      },
+      ro: {
+        text: (name) => `👋 Salut, ${name}!\n\n🎲 *Spinny* este un videochat aleatoriu direct în Telegram.\n\nApasă butonul de mai jos, permite accesul la cameră — și în câteva secunde vei fi conectat cu cineva nou din orice colț al lumii.\n\n• 🌍 Potrivire după limbă\n• ❤️ Reacții în timpul apelului\n• ⭐ Premium cu filtru de gen\n• 🚩 Sistem de moderare`,
+        button: "🎲 Deschide Spinny",
+      },
+      el: {
+        text: (name) => `👋 Γεια σου, ${name}!\n\n🎲 Το *Spinny* είναι ένα τυχαίο βιντεοτσάτ απευθείας μέσα στο Telegram.\n\nΠάτησε το κουμπί παρακάτω, επίτρεψε την πρόσβαση στην κάμερα — και σε λίγα δευτερόλεπτα θα συνδεθείς με κάποιον νέο από οποιοδήποτε σημείο του κόσμου.\n\n• 🌍 Αντιστοίχιση βάσει γλώσσας\n• ❤️ Αντιδράσεις κατά τη διάρκεια της κλήσης\n• ⭐ Premium με φίλτρο φύλου\n• 🚩 Σύστημα συντονισμού`,
+        button: "🎲 Άνοιγμα Spinny",
+      },
+      cs: {
+        text: (name) => `👋 Ahoj, ${name}!\n\n🎲 *Spinny* je náhodný videochat přímo v Telegramu.\n\nKlepni na tlačítko níže, povol přístup ke kameře — a během pár vteřin se spojíš s novým člověkem odkudkoli na světě.\n\n• 🌍 Párování podle jazyka\n• ❤️ Reakce během hovoru\n• ⭐ Premium s filtrem pohlaví\n• 🚩 Systém moderace`,
+        button: "🎲 Otevřít Spinny",
+      },
+      sv: {
+        text: (name) => `👋 Hej, ${name}!\n\n🎲 *Spinny* är en slumpmässig videochatt direkt i Telegram.\n\nTryck på knappen nedan, tillåt kameraåtkomst — och på några sekunder är du kopplad till någon ny från vilken plats som helst i världen.\n\n• 🌍 Matchning efter språk\n• ❤️ Reaktioner under samtalet\n• ⭐ Premium med könsfilter\n• 🚩 Modereringssystem`,
+        button: "🎲 Öppna Spinny",
+      },
+      fi: {
+        text: (name) => `👋 Hei, ${name}!\n\n🎲 *Spinny* on satunnainen videochat suoraan Telegramissa.\n\nPaina alla olevaa painiketta, salli kameran käyttö — ja muutamassa sekunnissa olet yhteydessä uuteen ihmiseen mistä tahansa päin maailmaa.\n\n• 🌍 Kielen mukainen yhdistäminen\n• ❤️ Reaktiot puhelun aikana\n• ⭐ Premium sukupuolisuodattimella\n• 🚩 Moderointijärjestelmä`,
+        button: "🎲 Avaa Spinny",
+      },
+      da: {
+        text: (name) => `👋 Hej, ${name}!\n\n🎲 *Spinny* er en tilfældig videochat direkte i Telegram.\n\nTryk på knappen nedenfor, giv adgang til kameraet — og om få sekunder er du forbundet med en ny person fra hele verden.\n\n• 🌍 Matchning efter sprog\n• ❤️ Reaktioner under opkaldet\n• ⭐ Premium med kønsfilter\n• 🚩 Moderationssystem`,
+        button: "🎲 Åbn Spinny",
+      },
+      no: {
+        text: (name) => `👋 Hei, ${name}!\n\n🎲 *Spinny* er en tilfeldig videochat rett i Telegram.\n\nTrykk på knappen nedenfor, gi tilgang til kameraet — og om noen sekunder er du koblet til en ny person fra hvor som helst i verden.\n\n• 🌍 Matching etter språk\n• ❤️ Reaksjoner under samtalen\n• ⭐ Premium med kjønnsfilter\n• 🚩 Modereringssystem`,
+        button: "🎲 Åpne Spinny",
+      },
+      hu: {
+        text: (name) => `👋 Szia, ${name}!\n\n🎲 A *Spinny* egy véletlenszerű videocsevegés közvetlenül a Telegramban.\n\nÉrintsd meg az alábbi gombot, engedélyezd a kamera hozzáférést — és pár másodperc múlva már beszélgethetsz valakivel a világ bármely pontjáról.\n\n• 🌍 Párosítás nyelv szerint\n• ❤️ Reakciók hívás közben\n• ⭐ Premium nemi szűrővel\n• 🚩 Moderációs rendszer`,
+        button: "🎲 Spinny megnyitása",
+      },
+      he: {
+        text: (name) => `👋 היי, ${name}!\n\n🎲 *Spinny* הוא צ'אט וידאו אקראי ישירות בטלגרם.\n\nלחץ על הכפתור למטה, אשר גישה למצלמה — ותוך שניות תתחבר לאדם חדש מכל מקום בעולם.\n\n• 🌍 התאמה לפי שפה\n• ❤️ ריאקציות במהלך השיחה\n• ⭐ פרימיום עם סינון לפי מגדר\n• 🚩 מערכת מודרציה`,
+        button: "🎲 פתח את Spinny",
+      },
+      az: {
+        text: (name) => `👋 Salam, ${name}!\n\n🎲 *Spinny* birbaşa Telegramda təsadüfi video çatdır.\n\nAşağıdakı düyməyə bas, kameraya girişə icazə ver — bir neçə saniyə ərzində dünyanın istənilən nöqtəsindən yeni biri ilə əlaqədə olacaqsan.\n\n• 🌍 Dilə görə uyğunlaşdırma\n• ❤️ Zəng zamanı reaksiyalar\n• ⭐ Cins filtrli Premium\n• 🚩 Moderasiya sistemi`,
+        button: "🎲 Spinny-ni aç",
+      },
+      kk: {
+        text: (name) => `👋 Сәлем, ${name}!\n\n🎲 *Spinny* — Telegram ішінде тікелей кездейсоқ бейне чат.\n\nТөмендегі түймені бас, камераға қатынасуға рұқсат бер — бірнеше секундтан кейін әлемнің кез келген нүктесінен жаңа адаммен байланыста боласың.\n\n• 🌍 Тіл бойынша сәйкестендіру\n• ❤️ Қоңырау кезіндегі реакциялар\n• ⭐ Жыныс сүзгісі бар Premium\n• 🚩 Модерация жүйесі`,
+        button: "🎲 Spinny ашу",
+      },
+      uz: {
+        text: (name) => `👋 Salom, ${name}!\n\n🎲 *Spinny* — bu Telegram ichida to'g'ridan-to'g'ri tasodifiy video chat.\n\nPastdagi tugmani bosing, kameraga ruxsat bering — va bir necha soniyada dunyoning istalgan nuqtasidan yangi odam bilan bog'lanasiz.\n\n• 🌍 Til bo'yicha moslashtirish\n• ❤️ Qo'ng'iroq davomidagi reaksiyalar\n• ⭐ Jins filtri bilan Premium\n• 🚩 Moderatsiya tizimi`,
+        button: "🎲 Spinny-ni ochish",
+      },
     };
 
     const g = GREETINGS[langCode] || GREETINGS.ru;
@@ -603,7 +719,7 @@ app.post("/tg-webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: userId,
-        photo: "https://spinnyapp.ru/spinny_logo.png",
+        photo: "https://spinnyapp.ru/spinny_logo.png?v=2",
         caption: g.text(firstName),
         parse_mode: "Markdown",
         reply_markup: {
