@@ -3,7 +3,76 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"/>
-<title>Spinny</title>
+<title>Spinny — Видеочат рулетка онлайн бесплатно | Случайные видеозвонки в Telegram</title>
+<meta name="description" content="Spinny — бесплатная видеочат-рулетка прямо в Telegram. Общайтесь со случайными людьми со всего мира без регистрации: открыл бота — и уже в эфире. Фильтр по стране, языку и полу.">
+<link rel="canonical" href="https://spinnyapp.ru/">
+
+<!-- Open Graph — превью при пересылке ссылки в Telegram/соцсетях -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Spinny">
+<meta property="og:title" content="Spinny — Видеочат рулетка онлайн бесплатно">
+<meta property="og:description" content="Случайные видеозвонки с людьми со всего мира прямо в Telegram. Без регистрации, без скачивания приложений.">
+<meta property="og:url" content="https://spinnyapp.ru/">
+<meta property="og:image" content="https://spinnyapp.ru/spinny_logo.png">
+<meta property="og:locale" content="ru_RU">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Spinny — Видеочат рулетка онлайн бесплатно">
+<meta name="twitter:description" content="Случайные видеозвонки с людьми со всего мира прямо в Telegram.">
+<meta name="twitter:image" content="https://spinnyapp.ru/spinny_logo.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Spinny",
+  "url": "https://spinnyapp.ru/",
+  "description": "Бесплатная видеочат-рулетка в Telegram для общения со случайными людьми со всего мира.",
+  "applicationCategory": "SocialNetworkingApplication",
+  "operatingSystem": "Any",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "RUB"
+  }
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Что такое Spinny?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Spinny — видеочат-рулетка внутри Telegram: сервис для случайных видеозвонков с людьми со всего мира без скачивания отдельных приложений." }
+    },
+    {
+      "@type": "Question",
+      "name": "Это бесплатно?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Да, поиск собеседника, видео- и текстовый чат бесплатны. Premium добавляет фильтр по полу и приоритетный матчинг." }
+    },
+    {
+      "@type": "Question",
+      "name": "Нужна регистрация?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Отдельной регистрации нет — вход происходит через ваш аккаунт Telegram за несколько секунд, без пароля." }
+    },
+    {
+      "@type": "Question",
+      "name": "Чем Spinny отличается от Omegle и Chatroulette?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Spinny работает прямо внутри Telegram — не нужно ничего устанавливать. Жалобы и нарушения проверяются автоматически, что делает общение безопаснее." }
+    },
+    {
+      "@type": "Question",
+      "name": "Можно ли выбрать страну собеседника?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Да, есть фильтр по стране — можно искать собеседников из конкретной страны или общаться со всем миром." }
+    }
+  ]
+}
+</script>
+
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
 <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -83,6 +152,29 @@ html, body {
   align-items: center; justify-content: center;
   gap: 10px;
   padding: 24px;
+}
+
+#screenAuthGate { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+#screenAuthGate .home-content { justify-content: flex-start; padding-top: 40px; padding-bottom: 40px; }
+
+.gate-faq {
+  width: 100%; max-width: 340px;
+  margin-top: 28px;
+  text-align: left;
+}
+.gate-faq-title {
+  font-size: 13px; font-weight: 700; color: #6f8bb0;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 14px; text-align: center;
+}
+.gate-faq-item { margin-bottom: 16px; }
+.gate-faq-item h3 {
+  font-size: 14px; font-weight: 700; color: #fff;
+  margin-bottom: 4px;
+}
+.gate-faq-item p {
+  font-size: 13px; color: #9AB2CC; line-height: 1.5;
+  margin: 0;
 }
 
 /* Лого */
@@ -681,6 +773,7 @@ html, body {
 </style>
 </head>
 <body>
+<h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;">Spinny — видеочат рулетка онлайн бесплатно в Telegram</h1>
 
 <!-- Общий TV-статик фон — виден сквозь screenHome и screenAuthGate -->
 <canvas id="staticCanvas"></canvas>
@@ -710,9 +803,11 @@ html, body {
     </div>
 
     <p class="gate-desc">
-      🎲 Spinny — случайный видеочат в Telegram. Один тап — и вы уже общаетесь
-      по видео с новым человеком из любой точки мира: мэтчинг по языку,
-      реакции во время звонка и фильтр по полу с Premium.
+      🎲 Spinny — видеочат-рулетка нового поколения прямо в Telegram. Один тап —
+      и вы уже общаетесь по видео со случайным собеседником из любой точки
+      мира: мэтчинг по языку и стране, реакции во время звонка, фильтр по полу
+      с Premium. Как Omegle или Chatroulette, только без скачивания
+      приложений — открыли бота и сразу в эфире.
     </p>
 
     <p class="gate-desc gate-desc-sub">
@@ -725,6 +820,35 @@ html, body {
     <p class="disclaimer">
       Продолжая, вы соглашаетесь с <span id="rulesLinkGate" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span>.
     </p>
+
+    <div class="gate-faq">
+      <h2 class="gate-faq-title">Часто задаваемые вопросы</h2>
+
+      <div class="gate-faq-item">
+        <h3>Что такое Spinny?</h3>
+        <p>Spinny — видеочат-рулетка внутри Telegram: сервис для случайных видеозвонков с людьми со всего мира без скачивания отдельных приложений.</p>
+      </div>
+
+      <div class="gate-faq-item">
+        <h3>Это бесплатно?</h3>
+        <p>Да, поиск собеседника, видео- и текстовый чат бесплатны. Premium добавляет фильтр по полу и приоритетный матчинг.</p>
+      </div>
+
+      <div class="gate-faq-item">
+        <h3>Нужна регистрация?</h3>
+        <p>Отдельной регистрации нет — вход происходит через ваш аккаунт Telegram за несколько секунд, без пароля.</p>
+      </div>
+
+      <div class="gate-faq-item">
+        <h3>Чем Spinny отличается от Omegle и Chatroulette?</h3>
+        <p>Spinny работает прямо внутри Telegram — не нужно ничего устанавливать. Жалобы и нарушения проверяются автоматически, что делает общение безопаснее.</p>
+      </div>
+
+      <div class="gate-faq-item">
+        <h3>Можно ли выбрать страну собеседника?</h3>
+        <p>Да, есть фильтр по стране — можно искать собеседников из конкретной страны или общаться со всем миром.</p>
+      </div>
+    </div>
 
   </div>
 </div>
@@ -1534,7 +1658,8 @@ drawStatic();
 
 function stopStatic() { cancelAnimationFrame(staticRaf); }
 
-// ─── Счётчик онлайн (имитация, заменим реальным позже) ──
+// ─── Счётчик онлайн (имитация — специально, чтобы не показывать пустую
+// комнату новым пользователям на раннем этапе; смотри с CEO прежде чем менять) ──
 let fakeOnline = 12000 + Math.floor(Math.random() * 8000);
 function renderOnlineCount() {
   const text = Math.max(1000, fakeOnline).toLocaleString("ru");
