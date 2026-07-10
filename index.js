@@ -35,8 +35,19 @@ let geoLookup = null;
 })();
 
 function getClientIp(socket) {
-  const forwarded = socket.handshake.headers["x-forwarded-for"];
-  if (forwarded) return forwarded.split(",")[0].trim();
+  const h = socket.handshake.headers;
+  // Разные прокси называют заголовок с реальным IP клиента по-разному —
+  // проверяем по очереди самые распространённые варианты
+  const candidates = [
+    h["x-forwarded-for"],
+    h["x-real-ip"],
+    h["cf-connecting-ip"],
+    h["true-client-ip"],
+    h["x-client-ip"],
+  ];
+  for (const c of candidates) {
+    if (c) return String(c).split(",")[0].trim();
+  }
   return socket.handshake.address;
 }
 
@@ -1852,6 +1863,13 @@ io.on("connection", (socket) => {
   const country = getCountryFromIp(clientIp);
   countryOf.set(socket.id, country);
   console.log("[geoip]", socket.id, "| ip:", clientIp, "| страна:", country || "не определена");
+  if (!country) {
+    // Диагностика: IP похож на приватный/внутренний — печатаем все заголовки,
+    // чтобы понять, как Amvera реально прокидывает адрес клиента (если вообще)
+    console.log("[geoip-debug]", socket.id, "| все заголовки:", JSON.stringify(socket.handshake.headers));
+    console.log("[geoip-debug]", socket.id, "| handshake.address:", socket.handshake.address);
+  }
+  socket.emit("your-country", { country });
 
   socket.on("set-country-filter", ({ country: preferred }) => {
     if (isRateLimited(socket.id, "set-country-filter", 10, 10000)) return;
