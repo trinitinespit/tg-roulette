@@ -942,25 +942,25 @@ html, body {
 <!-- Попап покупки премиума -->
 <div class="modal-backdrop" id="premiumModal" hidden onclick="closePremiumModal(event)">
   <div class="modal-sheet">
-    <div class="modal-title">⭐ Spinny Premium</div>
-    <div style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
+    <div class="modal-title" id="premiumModalTitle">⭐ Spinny Premium</div>
+    <div id="premiumFeaturesText" style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
       Фильтр по полу · Приоритетный матчинг<br>Без рекламы (скоро)
     </div>
     <button class="modal-option" id="premOpt30" onclick="buyPremium('premium_30')">
       <span class="emoji">⭐</span>
       <div>
-        <div style="font-weight:700;">30 дней</div>
+        <div style="font-weight:700;"><span id="premOpt30Days">30 дней</span></div>
         <div style="font-size:12px;color:#9AB2CC;">75 Stars (~$1)</div>
       </div>
     </button>
     <button class="modal-option" id="premOpt90" onclick="buyPremium('premium_90')">
       <span class="emoji">🌟</span>
       <div>
-        <div style="font-weight:700;">3 месяца <span style="color:#4CD964;font-size:11px;">−11%</span></div>
+        <div style="font-weight:700;"><span id="premOpt90Days">3 месяца</span> <span style="color:#4CD964;font-size:11px;">−11%</span></div>
         <div style="font-size:12px;color:#9AB2CC;">200 Stars (~$2.6)</div>
       </div>
     </button>
-    <p style="font-size:11px;color:#9AB2CC;text-align:center;margin-top:10px;">
+    <p id="invoiceHintPremium" style="font-size:11px;color:#9AB2CC;text-align:center;margin-top:10px;">
       После нажатия инвойс придёт в чат с ботом
     </p>
   </div>
@@ -969,8 +969,8 @@ html, body {
 <!-- Попап доната -->
 <div class="modal-backdrop" id="donateModal" hidden onclick="closeDonateModal(event)">
   <div class="modal-sheet">
-    <div class="modal-title">❤️ Поддержать Spinny</div>
-    <div style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
+    <div class="modal-title" id="donateModalTitle">❤️ Поддержать Spinny</div>
+    <div id="donateBodyText" style="font-size:13px;color:#9AB2CC;margin-bottom:14px;text-align:center;line-height:1.6;">
       Любая сумма помогает развивать проект. Спасибо!
     </div>
     <input
@@ -989,7 +989,7 @@ html, body {
     <button class="btn-premium" id="donateSubmitBtn" onclick="submitDonate()" style="width:100%;">
       ❤️ <span id="donateSubmitText">Задонатить</span>
     </button>
-    <p style="font-size:11px;color:#9AB2CC;text-align:center;margin-top:10px;">
+    <p id="invoiceHintDonate" style="font-size:11px;color:#9AB2CC;text-align:center;margin-top:10px;">
       После нажатия инвойс придёт в чат с ботом
     </p>
   </div>
@@ -1001,7 +1001,7 @@ html, body {
     <div style="display:flex;justify-content:flex-end;margin-bottom:-8px;">
       <button onclick="closeAdvertiseModal()" style="background:rgba(255,255,255,0.08);border:none;color:#fff;width:28px;height:28px;border-radius:50%;font-size:15px;cursor:pointer;">✕</button>
     </div>
-    <div class="modal-title">📢 Разместить рекламу</div>
+    <div class="modal-title" id="advertiseModalTitle">📢 Разместить рекламу</div>
 
     <!-- Наглядное демо: как реклама выглядит для пользователя приложения —
          зацикленная анимация: собеседник → свайп → полноэкранная реклама → обратно -->
@@ -1256,6 +1256,20 @@ const STOP_BUTTON_TEXT = { ru:"Стоп", en:"Stop", es:"Detener", tr:"Durdur", 
 
 const COUNTRY_TITLE_TEXT = { ru:"Страна", en:"Country", es:"País", tr:"Ülke", it:"Paese", zh:"国家", ar:"الدولة", hi:"देश", ja:"国", fr:"Pays", de:"Land" };
 
+const MODAL_TEXT_EXTRA = {
+  ru: { donate_title:"❤️ Поддержать Spinny", donate_body:"Любая сумма помогает развивать проект. Спасибо!", advertise_title:"📢 Разместить рекламу", premium_features:"Фильтр по полу · Приоритетный матчинг<br>Без рекламы (скоро)", premium_30days:"30 дней", premium_90days:"3 месяца", invoice_hint:"После нажатия инвойс придёт в чат с ботом" },
+  en: { donate_title:"❤️ Support Spinny", donate_body:"Any amount helps the project grow. Thank you!", advertise_title:"📢 Place an ad", premium_features:"Gender filter · Priority matching<br>Ad-free (coming soon)", premium_30days:"30 days", premium_90days:"3 months", invoice_hint:"After tapping, the invoice will arrive in the bot chat" },
+  es: { donate_title:"❤️ Apoyar a Spinny", donate_body:"Cualquier cantidad ayuda a que el proyecto crezca. ¡Gracias!", advertise_title:"📢 Publicar un anuncio", premium_features:"Filtro de género · Emparejamiento prioritario<br>Sin anuncios (próximamente)", premium_30days:"30 días", premium_90days:"3 meses", invoice_hint:"Al pulsar, la factura llegará al chat con el bot" },
+  tr: { donate_title:"❤️ Spinny'yi destekle", donate_body:"Her miktar projenin büyümesine yardımcı olur. Teşekkürler!", advertise_title:"📢 Reklam ver", premium_features:"Cinsiyet filtresi · Öncelikli eşleştirme<br>Reklamsız (yakında)", premium_30days:"30 gün", premium_90days:"3 ay", invoice_hint:"Dokunduktan sonra fatura bot sohbetine gelecek" },
+  it: { donate_title:"❤️ Sostieni Spinny", donate_body:"Qualsiasi importo aiuta il progetto a crescere. Grazie!", advertise_title:"📢 Pubblica un annuncio", premium_features:"Filtro genere · Abbinamento prioritario<br>Senza pubblicità (presto)", premium_30days:"30 giorni", premium_90days:"3 mesi", invoice_hint:"Dopo aver toccato, la fattura arriverà nella chat con il bot" },
+  zh: { donate_title:"❤️ 支持 Spinny", donate_body:"任何金额都能帮助项目成长，谢谢！", advertise_title:"📢 投放广告", premium_features:"性别筛选 · 优先匹配<br>无广告（即将推出）", premium_30days:"30 天", premium_90days:"3 个月", invoice_hint:"点击后，账单将发送到与机器人的聊天中" },
+  ar: { donate_title:"❤️ ادعم Spinny", donate_body:"أي مبلغ يساعد على تطوير المشروع. شكرًا لك!", advertise_title:"📢 نشر إعلان", premium_features:"فلترة حسب الجنس · مطابقة ذات أولوية<br>بدون إعلانات (قريبًا)", premium_30days:"30 يومًا", premium_90days:"3 أشهر", invoice_hint:"بعد الضغط، ستصلك الفاتورة في محادثة البوت" },
+  hi: { donate_title:"❤️ Spinny को सपोर्ट करें", donate_body:"कोई भी राशि प्रोजेक्ट को आगे बढ़ाने में मदद करती है। धन्यवाद!", advertise_title:"📢 विज्ञापन दें", premium_features:"लिंग फ़िल्टर · प्राथमिकता मैचिंग<br>बिना विज्ञापन (जल्द आ रहा है)", premium_30days:"30 दिन", premium_90days:"3 महीने", invoice_hint:"टैप करने के बाद, चालान बॉट चैट में आ जाएगा" },
+  ja: { donate_title:"❤️ Spinnyを応援する", donate_body:"どんな金額でもプロジェクトの成長の助けになります。ありがとうございます！", advertise_title:"📢 広告を掲載", premium_features:"性別フィルター · 優先マッチング<br>広告なし（近日公開）", premium_30days:"30日間", premium_90days:"3ヶ月", invoice_hint:"タップ後、請求書がボットのチャットに届きます" },
+  fr: { donate_title:"❤️ Soutenir Spinny", donate_body:"Chaque montant aide le projet à grandir. Merci !", advertise_title:"📢 Publier une annonce", premium_features:"Filtre de genre · Mise en relation prioritaire<br>Sans publicité (bientôt)", premium_30days:"30 jours", premium_90days:"3 mois", invoice_hint:"Après avoir appuyé, la facture arrivera dans le chat avec le bot" },
+  de: { donate_title:"❤️ Spinny unterstützen", donate_body:"Jeder Betrag hilft dem Projekt zu wachsen. Danke!", advertise_title:"📢 Werbung schalten", premium_features:"Geschlechterfilter · Bevorzugtes Matching<br>Werbefrei (bald)", premium_30days:"30 Tage", premium_90days:"3 Monate", invoice_hint:"Nach dem Tippen erhältst du die Rechnung im Bot-Chat" },
+};
+
 const AD_DEMO_TEXT = {
   ru: { badge:"📢<br>ВАША<br>РЕКЛАМА", caption:"Так реклама выглядит у пользователя — полноэкранная вставка" },
   en: { badge:"📢<br>YOUR<br>AD HERE", caption:"This is how your ad looks to the user — a full-screen slide" },
@@ -1419,6 +1433,24 @@ function applyLanguage(lang) {
 
   const countryModalTitle = document.getElementById("countryModalTitle");
   if (countryModalTitle) countryModalTitle.textContent = COUNTRY_TITLE_TEXT[currentLang] || COUNTRY_TITLE_TEXT.en;
+
+  const modalText = MODAL_TEXT_EXTRA[currentLang] || MODAL_TEXT_EXTRA.en;
+  const donateModalTitle = document.getElementById("donateModalTitle");
+  if (donateModalTitle) donateModalTitle.textContent = modalText.donate_title;
+  const donateBodyText = document.getElementById("donateBodyText");
+  if (donateBodyText) donateBodyText.textContent = modalText.donate_body;
+  const advertiseModalTitle = document.getElementById("advertiseModalTitle");
+  if (advertiseModalTitle) advertiseModalTitle.textContent = modalText.advertise_title;
+  const premiumFeaturesText = document.getElementById("premiumFeaturesText");
+  if (premiumFeaturesText) premiumFeaturesText.innerHTML = modalText.premium_features;
+  const premOpt30Days = document.getElementById("premOpt30Days");
+  if (premOpt30Days) premOpt30Days.textContent = modalText.premium_30days;
+  const premOpt90Days = document.getElementById("premOpt90Days");
+  if (premOpt90Days) premOpt90Days.textContent = modalText.premium_90days;
+  const invoiceHintPremium = document.getElementById("invoiceHintPremium");
+  if (invoiceHintPremium) invoiceHintPremium.textContent = modalText.invoice_hint;
+  const invoiceHintDonate = document.getElementById("invoiceHintDonate");
+  if (invoiceHintDonate) invoiceHintDonate.textContent = modalText.invoice_hint;
 
   // Модалка страны теперь рендерится заново при каждом открытии
   // (renderCountryOptions в openCountryModal), поэтому тут её обновлять не нужно
@@ -2398,11 +2430,72 @@ const COUNTRY_LIST = [
 ];
 const COUNTRY_BY_CODE = Object.fromEntries(COUNTRY_LIST.map(c => [c.code, c]));
 
+const COUNTRY_NAMES_I18N = {
+  US: { ru:"США", en:"United States", es:"Estados Unidos", tr:"ABD", it:"Stati Uniti", zh:"美国", ar:"الولايات المتحدة", hi:"संयुक्त राज्य अमेरिका", ja:"アメリカ合衆国", fr:"États-Unis", de:"USA" },
+  GB: { ru:"Великобритания", en:"United Kingdom", es:"Reino Unido", tr:"Birleşik Krallık", it:"Regno Unito", zh:"英国", ar:"المملكة المتحدة", hi:"यूनाइटेड किंगडम", ja:"イギリス", fr:"Royaume-Uni", de:"Vereinigtes Königreich" },
+  RU: { ru:"Россия", en:"Russia", es:"Rusia", tr:"Rusya", it:"Russia", zh:"俄罗斯", ar:"روسيا", hi:"रूस", ja:"ロシア", fr:"Russie", de:"Russland" },
+  DE: { ru:"Германия", en:"Germany", es:"Alemania", tr:"Almanya", it:"Germania", zh:"德国", ar:"ألمانيا", hi:"जर्मनी", ja:"ドイツ", fr:"Allemagne", de:"Deutschland" },
+  FR: { ru:"Франция", en:"France", es:"Francia", tr:"Fransa", it:"Francia", zh:"法国", ar:"فرنسا", hi:"फ्रांस", ja:"フランス", fr:"France", de:"Frankreich" },
+  IT: { ru:"Италия", en:"Italy", es:"Italia", tr:"İtalya", it:"Italia", zh:"意大利", ar:"إيطاليا", hi:"इटली", ja:"イタリア", fr:"Italie", de:"Italien" },
+  ES: { ru:"Испания", en:"Spain", es:"España", tr:"İspanya", it:"Spagna", zh:"西班牙", ar:"إسبانيا", hi:"स्पेन", ja:"スペイン", fr:"Espagne", de:"Spanien" },
+  TR: { ru:"Турция", en:"Turkey", es:"Turquía", tr:"Türkiye", it:"Turchia", zh:"土耳其", ar:"تركيا", hi:"तुर्की", ja:"トルコ", fr:"Turquie", de:"Türkei" },
+  UA: { ru:"Украина", en:"Ukraine", es:"Ucrania", tr:"Ukrayna", it:"Ucraina", zh:"乌克兰", ar:"أوكرانيا", hi:"यूक्रेन", ja:"ウクライナ", fr:"Ukraine", de:"Ukraine" },
+  PL: { ru:"Польша", en:"Poland", es:"Polonia", tr:"Polonya", it:"Polonia", zh:"波兰", ar:"بولندا", hi:"पोलैंड", ja:"ポーランド", fr:"Pologne", de:"Polen" },
+  NL: { ru:"Нидерланды", en:"Netherlands", es:"Países Bajos", tr:"Hollanda", it:"Paesi Bassi", zh:"荷兰", ar:"هولندا", hi:"नीदरलैंड", ja:"オランダ", fr:"Pays-Bas", de:"Niederlande" },
+  BE: { ru:"Бельгия", en:"Belgium", es:"Bélgica", tr:"Belçika", it:"Belgio", zh:"比利时", ar:"بلجيكا", hi:"बेल्जियम", ja:"ベルギー", fr:"Belgique", de:"Belgien" },
+  SE: { ru:"Швеция", en:"Sweden", es:"Suecia", tr:"İsveç", it:"Svezia", zh:"瑞典", ar:"السويد", hi:"स्वीडन", ja:"スウェーデン", fr:"Suède", de:"Schweden" },
+  NO: { ru:"Норвегия", en:"Norway", es:"Noruega", tr:"Norveç", it:"Norvegia", zh:"挪威", ar:"النرويج", hi:"नॉर्वे", ja:"ノルウェー", fr:"Norvège", de:"Norwegen" },
+  FI: { ru:"Финляндия", en:"Finland", es:"Finlandia", tr:"Finlandiya", it:"Finlandia", zh:"芬兰", ar:"فنلندا", hi:"फ़िनलैंड", ja:"フィンランド", fr:"Finlande", de:"Finnland" },
+  DK: { ru:"Дания", en:"Denmark", es:"Dinamarca", tr:"Danimarka", it:"Danimarca", zh:"丹麦", ar:"الدنمارك", hi:"डेनमार्क", ja:"デンマーク", fr:"Danemark", de:"Dänemark" },
+  CH: { ru:"Швейцария", en:"Switzerland", es:"Suiza", tr:"İsviçre", it:"Svizzera", zh:"瑞士", ar:"سويسرا", hi:"स्विट्ज़रलैंड", ja:"スイス", fr:"Suisse", de:"Schweiz" },
+  AT: { ru:"Австрия", en:"Austria", es:"Austria", tr:"Avusturya", it:"Austria", zh:"奥地利", ar:"النمسا", hi:"ऑस्ट्रिया", ja:"オーストリア", fr:"Autriche", de:"Österreich" },
+  PT: { ru:"Португалия", en:"Portugal", es:"Portugal", tr:"Portekiz", it:"Portogallo", zh:"葡萄牙", ar:"البرتغال", hi:"पुर्तगाल", ja:"ポルトガル", fr:"Portugal", de:"Portugal" },
+  GR: { ru:"Греция", en:"Greece", es:"Grecia", tr:"Yunanistan", it:"Grecia", zh:"希腊", ar:"اليونان", hi:"ग्रीस", ja:"ギリシャ", fr:"Grèce", de:"Griechenland" },
+  CZ: { ru:"Чехия", en:"Czechia", es:"República Checa", tr:"Çekya", it:"Repubblica Ceca", zh:"捷克", ar:"التشيك", hi:"चेक गणराज्य", ja:"チェコ", fr:"Tchéquie", de:"Tschechien" },
+  RO: { ru:"Румыния", en:"Romania", es:"Rumanía", tr:"Romanya", it:"Romania", zh:"罗马尼亚", ar:"رومانيا", hi:"रोमानिया", ja:"ルーマニア", fr:"Roumanie", de:"Rumänien" },
+  HU: { ru:"Венгрия", en:"Hungary", es:"Hungría", tr:"Macaristan", it:"Ungheria", zh:"匈牙利", ar:"المجر", hi:"हंगरी", ja:"ハンガリー", fr:"Hongrie", de:"Ungarn" },
+  BG: { ru:"Болгария", en:"Bulgaria", es:"Bulgaria", tr:"Bulgaristan", it:"Bulgaria", zh:"保加利亚", ar:"بلغاريا", hi:"बुल्गारिया", ja:"ブルガリア", fr:"Bulgarie", de:"Bulgarien" },
+  IE: { ru:"Ирландия", en:"Ireland", es:"Irlanda", tr:"İrlanda", it:"Irlanda", zh:"爱尔兰", ar:"أيرلندا", hi:"आयरलैंड", ja:"アイルランド", fr:"Irlande", de:"Irland" },
+  CA: { ru:"Канада", en:"Canada", es:"Canadá", tr:"Kanada", it:"Canada", zh:"加拿大", ar:"كندا", hi:"कनाडा", ja:"カナダ", fr:"Canada", de:"Kanada" },
+  MX: { ru:"Мексика", en:"Mexico", es:"México", tr:"Meksika", it:"Messico", zh:"墨西哥", ar:"المكسيك", hi:"मेक्सिको", ja:"メキシコ", fr:"Mexique", de:"Mexiko" },
+  BR: { ru:"Бразилия", en:"Brazil", es:"Brasil", tr:"Brezilya", it:"Brasile", zh:"巴西", ar:"البرازيل", hi:"ब्राज़ील", ja:"ブラジル", fr:"Brésil", de:"Brasilien" },
+  AR: { ru:"Аргентина", en:"Argentina", es:"Argentina", tr:"Arjantin", it:"Argentina", zh:"阿根廷", ar:"الأرجنتين", hi:"अर्जेंटीना", ja:"アルゼンチン", fr:"Argentine", de:"Argentinien" },
+  CO: { ru:"Колумбия", en:"Colombia", es:"Colombia", tr:"Kolombiya", it:"Colombia", zh:"哥伦比亚", ar:"كولومبيا", hi:"कोलंबिया", ja:"コロンビア", fr:"Colombie", de:"Kolumbien" },
+  CL: { ru:"Чили", en:"Chile", es:"Chile", tr:"Şili", it:"Cile", zh:"智利", ar:"تشيلي", hi:"चिली", ja:"チリ", fr:"Chili", de:"Chile" },
+  JP: { ru:"Япония", en:"Japan", es:"Japón", tr:"Japonya", it:"Giappone", zh:"日本", ar:"اليابان", hi:"जापान", ja:"日本", fr:"Japon", de:"Japan" },
+  KR: { ru:"Южная Корея", en:"South Korea", es:"Corea del Sur", tr:"Güney Kore", it:"Corea del Sud", zh:"韩国", ar:"كوريا الجنوبية", hi:"दक्षिण कोरिया", ja:"韓国", fr:"Corée du Sud", de:"Südkorea" },
+  CN: { ru:"Китай", en:"China", es:"China", tr:"Çin", it:"Cina", zh:"中国", ar:"الصين", hi:"चीन", ja:"中国", fr:"Chine", de:"China" },
+  IN: { ru:"Индия", en:"India", es:"India", tr:"Hindistan", it:"India", zh:"印度", ar:"الهند", hi:"भारत", ja:"インド", fr:"Inde", de:"Indien" },
+  ID: { ru:"Индонезия", en:"Indonesia", es:"Indonesia", tr:"Endonezya", it:"Indonesia", zh:"印度尼西亚", ar:"إندونيسيا", hi:"इंडोनेशिया", ja:"インドネシア", fr:"Indonésie", de:"Indonesien" },
+  PH: { ru:"Филиппины", en:"Philippines", es:"Filipinas", tr:"Filipinler", it:"Filippine", zh:"菲律宾", ar:"الفلبين", hi:"फ़िलीपींस", ja:"フィリピン", fr:"Philippines", de:"Philippinen" },
+  VN: { ru:"Вьетнам", en:"Vietnam", es:"Vietnam", tr:"Vietnam", it:"Vietnam", zh:"越南", ar:"فيتنام", hi:"वियतनाम", ja:"ベトナム", fr:"Vietnam", de:"Vietnam" },
+  TH: { ru:"Таиланд", en:"Thailand", es:"Tailandia", tr:"Tayland", it:"Thailandia", zh:"泰国", ar:"تايلاند", hi:"थाईलैंड", ja:"タイ", fr:"Thaïlande", de:"Thailand" },
+  MY: { ru:"Малайзия", en:"Malaysia", es:"Malasia", tr:"Malezya", it:"Malesia", zh:"马来西亚", ar:"ماليزيا", hi:"मलेशिया", ja:"マレーシア", fr:"Malaisie", de:"Malaysia" },
+  SA: { ru:"Саудовская Аравия", en:"Saudi Arabia", es:"Arabia Saudita", tr:"Suudi Arabistan", it:"Arabia Saudita", zh:"沙特阿拉伯", ar:"السعودية", hi:"सऊदी अरब", ja:"サウジアラビア", fr:"Arabie saoudite", de:"Saudi-Arabien" },
+  AE: { ru:"ОАЭ", en:"UAE", es:"EAU", tr:"BAE", it:"EAU", zh:"阿联酋", ar:"الإمارات", hi:"यूएई", ja:"UAE", fr:"ÉAU", de:"VAE" },
+  IL: { ru:"Израиль", en:"Israel", es:"Israel", tr:"İsrail", it:"Israele", zh:"以色列", ar:"إسرائيل", hi:"इज़राइल", ja:"イスラエル", fr:"Israël", de:"Israel" },
+  EG: { ru:"Египет", en:"Egypt", es:"Egipto", tr:"Mısır", it:"Egitto", zh:"埃及", ar:"مصر", hi:"मिस्र", ja:"エジプト", fr:"Égypte", de:"Ägypten" },
+  ZA: { ru:"ЮАР", en:"South Africa", es:"Sudáfrica", tr:"Güney Afrika", it:"Sudafrica", zh:"南非", ar:"جنوب أفريقيا", hi:"दक्षिण अफ़्रीका", ja:"南アフリカ", fr:"Afrique du Sud", de:"Südafrika" },
+  NG: { ru:"Нигерия", en:"Nigeria", es:"Nigeria", tr:"Nijerya", it:"Nigeria", zh:"尼日利亚", ar:"نيجيريا", hi:"नाइजीरिया", ja:"ナイジェリア", fr:"Nigeria", de:"Nigeria" },
+  AU: { ru:"Австралия", en:"Australia", es:"Australia", tr:"Avustralya", it:"Australia", zh:"澳大利亚", ar:"أستراليا", hi:"ऑस्ट्रेलिया", ja:"オーストラリア", fr:"Australie", de:"Australien" },
+  NZ: { ru:"Новая Зеландия", en:"New Zealand", es:"Nueva Zelanda", tr:"Yeni Zelanda", it:"Nuova Zelanda", zh:"新西兰", ar:"نيوزيلندا", hi:"न्यूज़ीलैंड", ja:"ニュージーランド", fr:"Nouvelle-Zélande", de:"Neuseeland" },
+  KZ: { ru:"Казахстан", en:"Kazakhstan", es:"Kazajistán", tr:"Kazakistan", it:"Kazakistan", zh:"哈萨克斯坦", ar:"كازاخستان", hi:"कज़ाख़स्तान", ja:"カザフスタン", fr:"Kazakhstan", de:"Kasachstan" },
+  BY: { ru:"Беларусь", en:"Belarus", es:"Bielorrusia", tr:"Belarus", it:"Bielorussia", zh:"白俄罗斯", ar:"بيلاروسيا", hi:"बेलारूस", ja:"ベラルーシ", fr:"Biélorussie", de:"Weißrussland" },
+  UZ: { ru:"Узбекистан", en:"Uzbekistan", es:"Uzbekistán", tr:"Özbekistan", it:"Uzbekistan", zh:"乌兹别克斯坦", ar:"أوزبكستان", hi:"उज़्बेकिस्तान", ja:"ウズベキスタン", fr:"Ouzbékistan", de:"Usbekistan" },
+  AZ: { ru:"Азербайджан", en:"Azerbaijan", es:"Azerbaiyán", tr:"Azerbaycan", it:"Azerbaigian", zh:"阿塞拜疆", ar:"أذربيجان", hi:"अज़रबैजान", ja:"アゼルバイジャン", fr:"Azerbaïdjan", de:"Aserbaidschan" },
+};
+
+function countryNameFor(code) {
+  return COUNTRY_NAMES_I18N[code]?.[currentLang] || COUNTRY_NAMES_I18N[code]?.en || code;
+}
+
 let myCountry = null; // ISO-код выбранного фильтра, null = весь мир
 
 function countryDisplay(code) {
   if (!code) return { emoji: "🌍", name: translate("world_wide") };
-  return COUNTRY_BY_CODE[code] || { emoji: "🏳️", name: code };
+  const entry = COUNTRY_BY_CODE[code];
+  if (!entry) return { emoji: "🏳️", name: code };
+  return { emoji: entry.emoji, name: countryNameFor(code) };
 }
 
 function applyCountry(code) {
@@ -2424,7 +2517,7 @@ function renderCountryOptions() {
     </button>`;
   html += COUNTRY_LIST.map(c => `
     <button class="modal-option ${myCountry === c.code ? 'selected' : ''}" onclick="selectCountry('${c.code}')">
-      <span class="emoji">${c.emoji}</span> ${c.name}
+      <span class="emoji">${c.emoji}</span> ${countryNameFor(c.code)}
     </button>`).join("");
   list.innerHTML = html;
 }
