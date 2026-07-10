@@ -1831,7 +1831,10 @@ function stopSearchAndGoHome() {
   showScreen("screenHome");
   tg?.disableClosingConfirmation();
   const startBtn = document.getElementById("btnStart");
+  const startBtnText = document.getElementById("btnStartText");
   if (startBtn) startBtn.disabled = false;
+  if (startBtnText) startBtnText.textContent = translate("start_button");
+  drawStatic(); // возобновляем анимацию ряби на фоне — startCamera() её останавливал
 }
 
 function doFind() {
