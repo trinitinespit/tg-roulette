@@ -1761,7 +1761,7 @@ const telegramUserOf = new Map();
 // Если не нашли своего языка за LANG_TIMEOUT мс — fallback на любой язык
 const waitingByLang = new Map(); // language_code -> socketId
 let waitingAny = null;           // fallback-очередь (любой язык)
-const LANG_TIMEOUT = 10000;      // 10 сек ждём своего языка, потом расширяем
+const LANG_TIMEOUT = 2000;       // 2 сек ждём своего языка, потом расширяем
 const langFallbackTimers = new Map(); // socketId -> timer
 
 // Страна пользователя, определённая по IP через GeoIP (не зависит от языка
@@ -1776,7 +1776,7 @@ const preferredCountryOf = new Map(); // socketId -> ISO-код страны | n
 // КАЖДЫЙ ожидающий, у кого определилась страна, независимо от того, искал ли он
 // сам по стране. Так его может найти кто-то другой, кто ищет именно его страну.
 const waitingByCountry = new Map(); // ISO-код страны -> socketId
-const COUNTRY_TIMEOUT = 10000;      // 10 сек ждём свою страну, потом — рандом
+const COUNTRY_TIMEOUT = 2000;       // 2 сек ждём свою страну, потом — рандом
 const countryFallbackTimers = new Map(); // socketId -> timer
 
 // Фильтры и статусы пользователей на время сессии
