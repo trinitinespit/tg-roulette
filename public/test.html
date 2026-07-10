@@ -780,6 +780,11 @@ html, body {
 
 <!-- ЭКРАН ВХОДА ЧЕРЕЗ TELEGRAM (для прямого захода на домен, вне Mini App) -->
 <div class="screen tv-screen" id="screenAuthGate" hidden>
+
+  <button class="lang-switch-btn" id="langSwitchBtnGate" onclick="openLangModal()">
+    <span id="langSwitchFlagGate">🌐</span> <span id="langSwitchCodeGate">RU</span>
+  </button>
+
   <div class="home-content">
 
     <div class="logo-wrap">
@@ -799,10 +804,10 @@ html, body {
     <div class="online-badge">
       <span class="online-dot"></span>
       <span class="online-count" id="onlineCountGate">–</span>
-      <span>пользователей онлайн</span>
+      <span id="onlineSuffixGate">пользователей онлайн</span>
     </div>
 
-    <p class="gate-desc">
+    <p class="gate-desc" id="gateDescMain">
       🎲 Spinny — видеочат-рулетка нового поколения прямо в Telegram. Один тап —
       и вы уже общаетесь по видео со случайным собеседником из любой точки
       мира: мэтчинг по языку и стране, реакции во время звонка, фильтр по полу
@@ -810,7 +815,7 @@ html, body {
       приложений — открыли бота и сразу в эфире.
     </p>
 
-    <p class="gate-desc gate-desc-sub">
+    <p class="gate-desc gate-desc-sub" id="gateDescSub">
       Чтобы отсечь ботов и нарушителей, вход возможен только через Telegram —
       это займёт 5 секунд и не требует пароля.
     </p>
@@ -818,35 +823,35 @@ html, body {
     <div id="tgLoginWidget" class="tg-login-widget"></div>
 
     <p class="disclaimer">
-      Продолжая, вы соглашаетесь с <span id="rulesLinkGate" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span>.
+      <span id="gateAgreePrefix">Продолжая, вы соглашаетесь с</span> <span id="rulesLinkGate" onclick="openRulesModal()" style="text-decoration:underline;cursor:pointer;color:#3B8FE8;">правилами</span>.
     </p>
 
     <div class="gate-faq">
-      <h2 class="gate-faq-title">Часто задаваемые вопросы</h2>
+      <h2 class="gate-faq-title" id="gateFaqTitle">Часто задаваемые вопросы</h2>
 
       <div class="gate-faq-item">
-        <h3>Что такое Spinny?</h3>
-        <p>Spinny — видеочат-рулетка внутри Telegram: сервис для случайных видеозвонков с людьми со всего мира без скачивания отдельных приложений.</p>
+        <h3 id="gateFaqQ1">Что такое Spinny?</h3>
+        <p id="gateFaqA1">Spinny — видеочат-рулетка внутри Telegram: сервис для случайных видеозвонков с людьми со всего мира без скачивания отдельных приложений.</p>
       </div>
 
       <div class="gate-faq-item">
-        <h3>Это бесплатно?</h3>
-        <p>Да, поиск собеседника, видео- и текстовый чат бесплатны. Premium добавляет фильтр по полу и приоритетный матчинг.</p>
+        <h3 id="gateFaqQ2">Это бесплатно?</h3>
+        <p id="gateFaqA2">Да, поиск собеседника, видео- и текстовый чат бесплатны. Premium добавляет фильтр по полу и приоритетный матчинг.</p>
       </div>
 
       <div class="gate-faq-item">
-        <h3>Нужна регистрация?</h3>
-        <p>Отдельной регистрации нет — вход происходит через ваш аккаунт Telegram за несколько секунд, без пароля.</p>
+        <h3 id="gateFaqQ3">Нужна регистрация?</h3>
+        <p id="gateFaqA3">Отдельной регистрации нет — вход происходит через ваш аккаунт Telegram за несколько секунд, без пароля.</p>
       </div>
 
       <div class="gate-faq-item">
-        <h3>Чем Spinny отличается от Omegle и Chatroulette?</h3>
-        <p>Spinny работает прямо внутри Telegram — не нужно ничего устанавливать. Жалобы и нарушения проверяются автоматически, что делает общение безопаснее.</p>
+        <h3 id="gateFaqQ4">Чем Spinny отличается от Omegle и Chatroulette?</h3>
+        <p id="gateFaqA4">Spinny работает прямо внутри Telegram — не нужно ничего устанавливать. Жалобы и нарушения проверяются автоматически, что делает общение безопаснее.</p>
       </div>
 
       <div class="gate-faq-item">
-        <h3>Можно ли выбрать страну собеседника?</h3>
-        <p>Да, есть фильтр по стране — можно искать собеседников из конкретной страны или общаться со всем миром.</p>
+        <h3 id="gateFaqQ5">Можно ли выбрать страну собеседника?</h3>
+        <p id="gateFaqA5">Да, есть фильтр по стране — можно искать собеседников из конкретной страны или общаться со всем миром.</p>
       </div>
     </div>
 
@@ -1470,6 +1475,10 @@ function applyLanguage(lang) {
   const switchCode = document.getElementById("langSwitchCode");
   if (switchFlag) switchFlag.textContent = LANG_DISPLAY[currentLang]?.flag || "🌐";
   if (switchCode) switchCode.textContent = LANG_DISPLAY[currentLang]?.code || "EN";
+  const switchFlagGate = document.getElementById("langSwitchFlagGate");
+  const switchCodeGate = document.getElementById("langSwitchCodeGate");
+  if (switchFlagGate) switchFlagGate.textContent = LANG_DISPLAY[currentLang]?.flag || "🌐";
+  if (switchCodeGate) switchCodeGate.textContent = LANG_DISPLAY[currentLang]?.code || "EN";
 
   // Экран звонка
   const btnNextText = document.getElementById("btnNextText");
