@@ -1968,15 +1968,24 @@ io.on("connection", (socket) => {
         }
         console.log("[waiting]", myId, "| country filter:", myPreferredCountry, "| моя страна:", myActualCountry || "??");
 
-        const ct = setTimeout(() => {
+        const ct = setTimeout(async () => {
           if (myActualCountry && waitingByCountry.get(myActualCountry) === myId) {
             waitingByCountry.delete(myActualCountry);
           }
-          if (!waitingAny) {
+          countryFallbackTimers.delete(myId);
+          if (!io.sockets.sockets.has(myId)) return; // уже отключился
+
+          // Если в общей очереди уже кто-то ждёт — матчимся с ним сразу,
+          // а не просто занимаем очередь молча (иначе оба зависают навсегда)
+          if (waitingAny && waitingAny !== myId && io.sockets.sockets.has(waitingAny)) {
+            const candidate = waitingAny;
+            waitingAny = null;
+            removeFromQueues(candidate);
+            await doMatch(candidate, myId);
+          } else {
             waitingAny = myId;
             console.log("[waiting→any]", myId, "| country timeout, переходим в общую очередь");
           }
-          countryFallbackTimers.delete(myId);
         }, COUNTRY_TIMEOUT);
         countryFallbackTimers.set(myId, ct);
         return;
@@ -2012,15 +2021,24 @@ io.on("connection", (socket) => {
         console.log("[waiting]", myId, "| lang:", myLang);
 
         // Через LANG_TIMEOUT переходим в общую очередь (fallback)
-        const t = setTimeout(() => {
+        const t = setTimeout(async () => {
           if (waitingByLang.get(myLang) === myId) {
             waitingByLang.delete(myLang);
-            if (!waitingAny) {
-              waitingAny = myId;
-              console.log("[waiting→any]", myId, "| lang timeout, переходим в общую очередь");
-            }
           }
           langFallbackTimers.delete(myId);
+          if (!io.sockets.sockets.has(myId)) return; // уже отключился
+
+          // Если в общей очереди уже кто-то ждёт — матчимся с ним сразу,
+          // а не просто занимаем очередь молча (иначе оба зависают навсегда)
+          if (waitingAny && waitingAny !== myId && io.sockets.sockets.has(waitingAny)) {
+            const candidate = waitingAny;
+            waitingAny = null;
+            removeFromQueues(candidate);
+            await doMatch(candidate, myId);
+          } else {
+            waitingAny = myId;
+            console.log("[waiting→any]", myId, "| lang timeout, переходим в общую очередь");
+          }
         }, LANG_TIMEOUT);
         langFallbackTimers.set(myId, t);
       } else {
