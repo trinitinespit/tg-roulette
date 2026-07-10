@@ -2441,9 +2441,10 @@ function selectCountry(code) {
 
 // Восстанавливаем ранее выбранный фильтр страны. Если пользователь ЕЩЁ НИ РАЗУ
 // не трогал этот селектор (в localStorage вообще нет ключа) — по умолчанию
-// ставим его СОБСТВЕННУЮ страну по IP (как только сервер её пришлёт), а не
-// "Весь мир". Если пользователь уже что-то выбирал раньше (в том числе
-// осознанно поставил "Весь мир") — уважаем этот выбор и не трогаем.
+// ставим его СОБСТВЕННУЮ страну (определяем через ipapi.co в браузере — на
+// сервере это не сработало, прокси Amvera подменяет реальный IP клиента на
+// внутренний ещё до нашего процесса). Если пользователь уже что-то выбирал
+// раньше (в том числе осознанно поставил "Весь мир") — уважаем этот выбор.
 let countryChosenBefore = false;
 try { countryChosenBefore = localStorage.getItem("spinny_country") !== null; } catch (e) {}
 
@@ -2459,11 +2460,32 @@ if (countryChosenBefore) {
   document.getElementById("countryLabel").textContent = info.name;
 }
 
-socket.on("your-country", ({ country }) => {
-  if (!countryChosenBefore && country) {
-    applyCountry(country); // теперь это сохранится как реальный выбор
+// Определяем страну самого пользователя (не фильтр!) — нужно серверу для
+// матчинга по стране других людей, кэшируем на устройстве, чтобы не дёргать
+// ipapi.co при каждом заходе (у бесплатных сервисов есть суточный лимit).
+(async function detectMyCountryOnce() {
+  let myDetectedCountry = null;
+  try { myDetectedCountry = localStorage.getItem("spinny_detected_country") || null; } catch (e) {}
+
+  if (!myDetectedCountry) {
+    try {
+      const resp = await fetch("https://ipapi.co/country/");
+      const text = (await resp.text()).trim();
+      if (/^[A-Z]{2}$/.test(text)) {
+        myDetectedCountry = text;
+        try { localStorage.setItem("spinny_detected_country", myDetectedCountry); } catch (e) {}
+      }
+    } catch (e) {
+      console.warn("[country] не удалось определить страну через ipapi.co:", e.message);
+    }
   }
-});
+
+  if (myDetectedCountry) {
+    socket.emit("report-my-country", { country: myDetectedCountry });
+    // Если фильтр ещё не выбирался вручную — используем как значение по умолчанию
+    if (!countryChosenBefore) applyCountry(myDetectedCountry);
+  }
+})();
 
 // ─── Правила ────────────────────────────────────────────
 function openRulesModal() {
