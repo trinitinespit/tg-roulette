@@ -858,7 +858,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   if (!db) return res.status(503).send("БД недоступна");
 
   try {
-    const [bans, reports, users, unban, blocks, ads, transactions, sources] = await Promise.all([
+    const [bans, reports, users, unban, blocks, ads, transactions, sources, totalUsers, totalPremium] = await Promise.all([
     db.query(`SELECT b.telegram_id, b.reason, b.banned_at,
               u.username, u.first_name
               FROM bans b LEFT JOIN users u ON u.telegram_id = b.telegram_id
@@ -887,6 +887,8 @@ app.get("/admin", adminAuth, async (req, res) => {
               ORDER BY t.created_at DESC LIMIT 300`),
     db.query(`SELECT COALESCE(source_param, 'органика') AS source, COUNT(*) AS cnt
               FROM users GROUP BY source ORDER BY cnt DESC LIMIT 50`),
+    db.query(`SELECT COUNT(*) AS cnt FROM users`),
+    db.query(`SELECT COUNT(*) AS cnt FROM users WHERE is_premium = TRUE`),
   ]);
 
   // Группируем доходы по категориям и валюте для круговых диаграмм
@@ -1004,11 +1006,11 @@ app.get("/admin", adminAuth, async (req, res) => {
       <div class="stat"><div class="stat-num">${onlineCount}</div><div class="stat-label">Онлайн сейчас</div></div>
       <div class="stat"><div class="stat-num">${activeCalls}</div><div class="stat-label">Звонков сейчас</div></div>
       <div class="stat"><div class="stat-num">${peakCallsToday}</div><div class="stat-label">Пик звонков сегодня</div></div>
-      <div class="stat"><div class="stat-num">${users.rowCount}</div><div class="stat-label">Юзеров (100)</div></div>
+      <div class="stat"><div class="stat-num">${totalUsers.rows[0].cnt}</div><div class="stat-label">Юзеров всего</div></div>
       <div class="stat"><div class="stat-num">${bans.rowCount}</div><div class="stat-label">Банов</div></div>
       <div class="stat"><div class="stat-num">${reports.rows.filter(r=>r.verdict==='violation'||r.verdict==='csam').length}</div><div class="stat-label">Нарушений</div></div>
       <div class="stat"><div class="stat-num">${reports.rows.filter(r=>r.verdict==='csam').length}</div><div class="stat-label">CSAM</div></div>
-      <div class="stat"><div class="stat-num">${users.rows.filter(u=>u.is_premium).length}</div><div class="stat-label">Премиум</div></div>
+      <div class="stat"><div class="stat-num">${totalPremium.rows[0].cnt}</div><div class="stat-label">Премиум</div></div>
       <div class="stat"><div class="stat-num">${unban.rowCount}</div><div class="stat-label">Разблокировок</div></div>
     </div>
   </div>
