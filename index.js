@@ -743,24 +743,32 @@ app.post("/tg-webhook", async (req, res) => {
 
     const g = GREETINGS[langCode] || GREETINGS.ru;
 
-    await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: userId,
-        photo: "https://spinnyapp.ru/spinny_logo.png?v=4",
-        caption: g.text(firstName),
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [[
-            {
-              text: g.button,
-              web_app: { url: "https://spinnyapp.ru" }
-            }
-          ]]
-        }
-      }),
-    });
+    try {
+      const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: userId,
+          photo: "https://spinnyapp.ru/spinny_logo.png?v=4",
+          caption: g.text(firstName),
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [[
+              {
+                text: g.button,
+                web_app: { url: "https://spinnyapp.ru" }
+              }
+            ]]
+          }
+        }),
+      });
+      const respJson = await resp.json();
+      if (!respJson.ok) {
+        console.error("[start] Telegram отклонил sendPhoto:", JSON.stringify(respJson));
+      }
+    } catch (e) {
+      console.error("[start] ошибка при отправке приветствия:", e.message);
+    }
     return;
   }
 
