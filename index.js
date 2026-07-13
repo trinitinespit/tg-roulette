@@ -1345,7 +1345,7 @@ async function manualBanFromUsers(id) {
 async function broadcastToAllNow() {
   const messageText = document.getElementById('broadcastMessageInput').value.trim();
   if (!messageText) return alert('Введите текст сообщения');
-  if (!confirm('Разослать это сообщение ВСЕМ пользователям прямо сейчас?\n\n«' + messageText + '»\n\nЭто одноразовое действие, отменить рассылку после старта нельзя.')) return;
+  if (!confirm('Разослать это сообщение ВСЕМ пользователям прямо сейчас?\\n\\n«' + messageText + '»\\n\\nЭто одноразовое действие, отменить рассылку после старта нельзя.')) return;
   const btn = event.target;
   btn.disabled = true;
   btn.textContent = 'Рассылаю...';
