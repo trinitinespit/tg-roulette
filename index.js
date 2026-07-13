@@ -994,6 +994,10 @@ app.get("/admin", adminAuth, async (req, res) => {
   .stat-label { font-size: 11px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
   table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }
   th { background: #0f172a; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: #94a3b8; }
+  th.sort-asc::after { content: " ▲"; color: #38bdf8; }
+  th.sort-desc::after { content: " ▼"; color: #38bdf8; }
   td { padding: 10px 14px; border-top: 1px solid #1e293b; vertical-align: top; }
   tr:hover td { background: rgba(56,189,248,0.04); }
   .verdict-violation { color: #f87171; font-weight: 600; }
@@ -1124,10 +1128,18 @@ app.get("/admin", adminAuth, async (req, res) => {
       <button class="btn" onclick="manualGrantPremium()">Выдать Premium</button>
     </div>
     <table id="usersTable">
-      <tr><th>TG ID</th><th>Имя</th><th>Статус</th><th>Пол</th><th>Источник</th><th>Последний вход</th><th>Действие</th></tr>
+      <tr>
+        <th class="sortable" onclick="sortUsersTable('id')">TG ID</th>
+        <th>Имя</th>
+        <th class="sortable" onclick="sortUsersTable('premium')">Статус</th>
+        <th class="sortable" onclick="sortUsersTable('gender')">Пол</th>
+        <th class="sortable" onclick="sortUsersTable('source')">Источник</th>
+        <th class="sortable" onclick="sortUsersTable('lastSeen')">Последний вход</th>
+        <th>Действие</th>
+      </tr>
       <tbody id="usersTableBody">
       ${users.rows.map(u => `
-      <tr>
+      <tr data-id="${u.telegram_id}" data-premium="${u.is_premium ? 1 : 0}" data-gender="${u.gender || ''}" data-source="${u.source_param || 'органика'}" data-lastseen="${new Date(u.last_seen_at).getTime()}">
         <td>${u.telegram_id}</td>
         <td>${u.first_name || ''} @${u.username || '—'}</td>
         <td>${u.is_premium ? '<span class="premium-badge">⭐ Premium</span>' : 'Free'}</td>
@@ -1376,6 +1388,52 @@ async function broadcastToAllNow() {
 
 let usersLoadedCount = 100; // первые 100 уже отрисованы сервером вместе со страницей
 
+const usersSortState = { key: null, dir: 1 }; // dir: 1 = по возрастанию, -1 = по убыванию
+
+function sortUsersTable(key) {
+  const tbody = document.getElementById('usersTableBody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+
+  // Повторный клик по тому же столбцу — меняем направление
+  if (usersSortState.key === key) {
+    usersSortState.dir *= -1;
+  } else {
+    usersSortState.key = key;
+    usersSortState.dir = 1;
+  }
+
+  const attrMap = {
+    id: 'data-id',
+    premium: 'data-premium',
+    gender: 'data-gender',
+    source: 'data-source',
+    lastSeen: 'data-lastseen',
+  };
+  const attr = attrMap[key];
+  const isNumeric = key === 'id' || key === 'premium' || key === 'lastSeen';
+
+  rows.sort((a, b) => {
+    let va = a.getAttribute(attr) || '';
+    let vb = b.getAttribute(attr) || '';
+    if (isNumeric) {
+      va = Number(va) || 0;
+      vb = Number(vb) || 0;
+      return (va - vb) * usersSortState.dir;
+    }
+    return va.localeCompare(vb, 'ru') * usersSortState.dir;
+  });
+
+  rows.forEach(r => tbody.appendChild(r));
+
+  // Визуальная подсказка направления сортировки в заголовках
+  document.querySelectorAll('#usersTable th.sortable').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+  });
+  const activeIdx = { id: 0, premium: 2, gender: 3, source: 4, lastSeen: 5 }[key];
+  const th = document.querySelectorAll('#usersTable th')[activeIdx];
+  if (th) th.classList.add(usersSortState.dir === 1 ? 'sort-asc' : 'sort-desc');
+}
+
 function escapeHtml(s) {
   const div = document.createElement('div');
   div.textContent = s == null ? '' : String(s);
@@ -1396,6 +1454,11 @@ async function loadMoreUsers() {
     const tbody = document.getElementById('usersTableBody');
     for (const u of data.users) {
       const tr = document.createElement('tr');
+      tr.setAttribute('data-id', u.telegram_id);
+      tr.setAttribute('data-premium', u.is_premium ? '1' : '0');
+      tr.setAttribute('data-gender', u.gender || '');
+      tr.setAttribute('data-source', u.source_param || 'органика');
+      tr.setAttribute('data-lastseen', new Date(u.last_seen_at).getTime());
       const statusHtml = u.is_premium ? '<span class="premium-badge">⭐ Premium</span>' : 'Free';
       const actionHtml = u.is_premium
         ? '<button class="ban-btn" onclick="manualRevokePremium(' + u.telegram_id + ')">Забрать Premium</button>'
