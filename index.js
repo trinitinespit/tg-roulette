@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { Pool } = require("pg");
 const { Server } = require("socket.io");
+const giftSender = require("./giftSender");
 
 console.log("[env] BOT_TOKEN:", process.env.TELEGRAM_BOT_TOKEN ? "SET" : "NOT SET");
 console.log("[env] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
@@ -132,6 +133,8 @@ async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reminders_blocked BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS source_param TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_balance INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE bans ADD COLUMN IF NOT EXISTS evidence_image TEXT;
     ALTER TABLE ads ADD COLUMN IF NOT EXISTS advertiser_tg_id BIGINT;
     ALTER TABLE ads ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved'; -- pending_payment | pending_review | approved | rejected
@@ -188,11 +191,20 @@ async function banUser(telegramId, reason, evidenceImage = null) {
   console.log("[ban] (db) добавлен:", telegramId);
 }
 
+const REFERRAL_BONUS = 10; // бонусов рефереру за каждого приведённого друга
+
 async function upsertUser(user) {
   if (!db || !user) return;
-  await db.query(`
-    INSERT INTO users (telegram_id, username, first_name, language_code, source_param, last_seen_at)
-    VALUES ($1, $2, $3, $4, $5, NOW())
+
+  // Реферер, если пришли по ссылке вида ?startapp=ref_123456
+  let referrerId = null;
+  const sp = user._startParam || "";
+  const m = sp.match(/^ref_(\d+)$/);
+  if (m && String(m[1]) !== String(user.id)) referrerId = m[1]; // нельзя привести самого себя
+
+  const { rows } = await db.query(`
+    INSERT INTO users (telegram_id, username, first_name, language_code, source_param, referred_by, last_seen_at)
+    VALUES ($1, $2, $3, $4, $5, $6, NOW())
     ON CONFLICT (telegram_id) DO UPDATE SET
       username        = EXCLUDED.username,
       first_name      = EXCLUDED.first_name,
@@ -201,7 +213,20 @@ async function upsertUser(user) {
       last_seen_at    = NOW(),
       reminder_stage  = 0,
       last_reminder_at = NULL
-  `, [user.id, user.username || null, user.first_name || null, user.language_code || null, user._startParam || null]);
+    RETURNING (xmax = 0) AS inserted
+  `, [user.id, user.username || null, user.first_name || null, user.language_code || null, user._startParam || null, referrerId]);
+
+  const isNewUser = rows[0]?.inserted;
+  if (isNewUser && referrerId) {
+    // Начисляем бонус рефереру, только если такой реферер реально существует
+    const res = await db.query(
+      `UPDATE users SET referral_balance = referral_balance + $1 WHERE telegram_id = $2`,
+      [REFERRAL_BONUS, referrerId]
+    );
+    if (res.rowCount > 0) {
+      console.log("[referral]", user.id, "пришёл от", referrerId, "| начислено:", REFERRAL_BONUS);
+    }
+  }
 }
 
 async function isPremium(telegramId) {
@@ -580,140 +605,140 @@ app.post("/tg-webhook", async (req, res) => {
 
     const GREETINGS = {
       ru: {
-        text: (name) => `👋 Привет, ${name}!\n\n🎲 *Spinny* — случайный видеочат прямо в Telegram.\n\nНажми кнопку ниже, разреши доступ к камере — и через секунды окажешься на связи с новым собеседником из любой точки мира.\n\n• 🌍 Мэтчинг по языку\n• ❤️ Реакции во время звонка\n• ⭐ Premium с фильтром по полу\n• 🚩 Система модерации`,
-        button: "🎲 Открыть Spinny",
+        text: (name) => `Привет, ${name}!\n\n*Spinny* — случайный видеочат прямо в Telegram.\n\nНажми кнопку ниже, разреши доступ к камере — и через секунды окажешься на связи с новым собеседником из любой точки мира.\n\n• Мэтчинг по языку\n• Реакции во время звонка\n• Premium с фильтром по полу\n• Система модерации`,
+        button: "Открыть Spinny",
       },
       en: {
-        text: (name) => `👋 Hi, ${name}!\n\n🎲 *Spinny* is a random video chat right inside Telegram.\n\nTap the button below, allow camera access — and in seconds you'll be talking to someone new from anywhere in the world.\n\n• 🌍 Language-based matching\n• ❤️ Reactions during the call\n• ⭐ Premium with gender filter\n• 🚩 Moderation system`,
-        button: "🎲 Open Spinny",
+        text: (name) => `Hi, ${name}!\n\n*Spinny* is a random video chat right inside Telegram.\n\nTap the button below, allow camera access — and in seconds you'll be talking to someone new from anywhere in the world.\n\n• Language-based matching\n• Reactions during the call\n• Premium with gender filter\n• Moderation system`,
+        button: "Open Spinny",
       },
       de: {
-        text: (name) => `👋 Hallo, ${name}!\n\n🎲 *Spinny* ist ein zufälliger Videochat direkt in Telegram.\n\nTippe unten auf den Button, erlaube den Kamerazugriff — und in Sekunden bist du mit jemand Neuem aus der ganzen Welt verbunden.\n\n• 🌍 Sprachbasiertes Matching\n• ❤️ Reaktionen während des Anrufs\n• ⭐ Premium mit Geschlechterfilter\n• 🚩 Moderationssystem`,
-        button: "🎲 Spinny öffnen",
+        text: (name) => `Hallo, ${name}!\n\n*Spinny* ist ein zufälliger Videochat direkt in Telegram.\n\nTippe unten auf den Button, erlaube den Kamerazugriff — und in Sekunden bist du mit jemand Neuem aus der ganzen Welt verbunden.\n\n• Sprachbasiertes Matching\n• Reaktionen während des Anrufs\n• Premium mit Geschlechterfilter\n• Moderationssystem`,
+        button: "Spinny öffnen",
       },
       tr: {
-        text: (name) => `👋 Merhaba, ${name}!\n\n🎲 *Spinny* Telegram içinde rastgele bir görüntülü sohbet.\n\nAşağıdaki butona dokun, kamera erişimine izin ver — saniyeler içinde dünyanın herhangi bir yerinden biriyle bağlanacaksın.\n\n• 🌍 Dile göre eşleştirme\n• ❤️ Görüşme sırasında tepkiler\n• ⭐ Cinsiyet filtreli Premium\n• 🚩 Moderasyon sistemi`,
-        button: "🎲 Spinny'yi Aç",
+        text: (name) => `Merhaba, ${name}!\n\n*Spinny* Telegram içinde rastgele bir görüntülü sohbet.\n\nAşağıdaki butona dokun, kamera erişimine izin ver — saniyeler içinde dünyanın herhangi bir yerinden biriyle bağlanacaksın.\n\n• Dile göre eşleştirme\n• Görüşme sırasında tepkiler\n• Cinsiyet filtreli Premium\n• Moderasyon sistemi`,
+        button: "Spinny'yi Aç",
       },
       es: {
-        text: (name) => `👋 ¡Hola, ${name}!\n\n🎲 *Spinny* es un videochat aleatorio directo en Telegram.\n\nToca el botón de abajo, permite el acceso a la cámara — y en segundos estarás conectado con alguien nuevo de cualquier parte del mundo.\n\n• 🌍 Emparejamiento por idioma\n• ❤️ Reacciones durante la llamada\n• ⭐ Premium con filtro de género\n• 🚩 Sistema de moderación`,
-        button: "🎲 Abrir Spinny",
+        text: (name) => `¡Hola, ${name}!\n\n*Spinny* es un videochat aleatorio directo en Telegram.\n\nToca el botón de abajo, permite el acceso a la cámara — y en segundos estarás conectado con alguien nuevo de cualquier parte del mundo.\n\n• Emparejamiento por idioma\n• Reacciones durante la llamada\n• Premium con filtro de género\n• Sistema de moderación`,
+        button: "Abrir Spinny",
       },
       it: {
-        text: (name) => `👋 Ciao, ${name}!\n\n🎲 *Spinny* è una videochat casuale direttamente in Telegram.\n\nTocca il pulsante qui sotto, consenti l'accesso alla fotocamera — e in pochi secondi sarai connesso con qualcuno di nuovo da qualsiasi parte del mondo.\n\n• 🌍 Abbinamento per lingua\n• ❤️ Reazioni durante la chiamata\n• ⭐ Premium con filtro di genere\n• 🚩 Sistema di moderazione`,
-        button: "🎲 Apri Spinny",
+        text: (name) => `Ciao, ${name}!\n\n*Spinny* è una videochat casuale direttamente in Telegram.\n\nTocca il pulsante qui sotto, consenti l'accesso alla fotocamera — e in pochi secondi sarai connesso con qualcuno di nuovo da qualsiasi parte del mondo.\n\n• Abbinamento per lingua\n• Reazioni durante la chiamata\n• Premium con filtro di genere\n• Sistema di moderazione`,
+        button: "Apri Spinny",
       },
       zh: {
-        text: (name) => `👋 你好，${name}！\n\n🎲 *Spinny* 是直接在 Telegram 内的随机视频聊天。\n\n点击下方按钮，允许摄像头访问——几秒钟内即可与来自世界各地的新朋友建立联系。\n\n• 🌍 按语言匹配\n• ❤️ 通话中的表情反应\n• ⭐ 带性别筛选的 Premium\n• 🚩 审核系统`,
-        button: "🎲 打开 Spinny",
+        text: (name) => `你好，${name}！\n\n*Spinny* 是直接在 Telegram 内的随机视频聊天。\n\n点击下方按钮，允许摄像头访问——几秒钟内即可与来自世界各地的新朋友建立联系。\n\n• 按语言匹配\n• 通话中的表情反应\n• 带性别筛选的 Premium\n• 审核系统`,
+        button: "打开 Spinny",
       },
       ar: {
-        text: (name) => `👋 مرحباً ${name}!\n\n🎲 *Spinny* هو دردشة فيديو عشوائية مباشرة داخل تيليجرام.\n\nاضغط على الزر أدناه، اسمح بالوصول إلى الكاميرا — وخلال ثوانٍ ستكون على تواصل مع شخص جديد من أي مكان في العالم.\n\n• 🌍 مطابقة حسب اللغة\n• ❤️ تفاعلات أثناء المكالمة\n• ⭐ Premium مع فلتر الجنس\n• 🚩 نظام الإشراف`,
-        button: "🎲 افتح Spinny",
+        text: (name) => `مرحباً ${name}!\n\n*Spinny* هو دردشة فيديو عشوائية مباشرة داخل تيليجرام.\n\nاضغط على الزر أدناه، اسمح بالوصول إلى الكاميرا — وخلال ثوانٍ ستكون على تواصل مع شخص جديد من أي مكان في العالم.\n\n• مطابقة حسب اللغة\n• تفاعلات أثناء المكالمة\n• Premium مع فلتر الجنس\n• نظام الإشراف`,
+        button: "افتح Spinny",
       },
       hi: {
-        text: (name) => `👋 नमस्ते, ${name}!\n\n🎲 *Spinny* सीधे Telegram में एक रैंडम वीडियो चैट है।\n\nनीचे दिए बटन को दबाएं, कैमरा एक्सेस की अनुमति दें — और कुछ ही सेकंड में आप दुनिया के किसी भी कोने से किसी नए व्यक्ति से जुड़ जाएंगे।\n\n• 🌍 भाषा के अनुसार मैचिंग\n• ❤️ कॉल के दौरान रिएक्शन\n• ⭐ जेंडर फ़िल्टर के साथ Premium\n• 🚩 मॉडरेशन सिस्टम`,
-        button: "🎲 Spinny खोलें",
+        text: (name) => `नमस्ते, ${name}!\n\n*Spinny* सीधे Telegram में एक रैंडम वीडियो चैट है।\n\nनीचे दिए बटन को दबाएं, कैमरा एक्सेस की अनुमति दें — और कुछ ही सेकंड में आप दुनिया के किसी भी कोने से किसी नए व्यक्ति से जुड़ जाएंगे।\n\n• भाषा के अनुसार मैचिंग\n• कॉल के दौरान रिएक्शन\n• जेंडर फ़िल्टर के साथ Premium\n• मॉडरेशन सिस्टम`,
+        button: "Spinny खोलें",
       },
       ja: {
-        text: (name) => `👋 こんにちは、${name}さん！\n\n🎲 *Spinny* はTelegram内で使える、ランダムなビデオチャットです。\n\n下のボタンをタップして、カメラへのアクセスを許可すると、数秒で世界中の新しい相手とつながります。\n\n• 🌍 言語によるマッチング\n• ❤️ 通話中のリアクション\n• ⭐ 性別フィルター付きPremium\n• 🚩 モデレーションシステム`,
-        button: "🎲 Spinnyを開く",
+        text: (name) => `こんにちは、${name}さん！\n\n*Spinny* はTelegram内で使える、ランダムなビデオチャットです。\n\n下のボタンをタップして、カメラへのアクセスを許可すると、数秒で世界中の新しい相手とつながります。\n\n• 言語によるマッチング\n• 通話中のリアクション\n• 性別フィルター付きPremium\n• モデレーションシステム`,
+        button: "Spinnyを開く",
       },
       fr: {
-        text: (name) => `👋 Salut, ${name} !\n\n🎲 *Spinny* est un videochat aléatoire directement dans Telegram.\n\nAppuie sur le bouton ci-dessous, autorise l'accès à la caméra — et en quelques secondes tu seras en contact avec quelqu'un de nouveau, n'importe où dans le monde.\n\n• 🌍 Appariement par langue\n• ❤️ Réactions pendant l'appel\n• ⭐ Premium avec filtre de genre\n• 🚩 Système de modération`,
-        button: "🎲 Ouvrir Spinny",
+        text: (name) => `Salut, ${name} !\n\n*Spinny* est un videochat aléatoire directement dans Telegram.\n\nAppuie sur le bouton ci-dessous, autorise l'accès à la caméra — et en quelques secondes tu seras en contact avec quelqu'un de nouveau, n'importe où dans le monde.\n\n• Appariement par langue\n• Réactions pendant l'appel\n• Premium avec filtre de genre\n• Système de modération`,
+        button: "Ouvrir Spinny",
       },
       pt: {
-        text: (name) => `👋 Olá, ${name}!\n\n🎲 *Spinny* é um videochat aleatório direto no Telegram.\n\nToque no botão abaixo, permita o acesso à câmera — e em segundos você estará conectado com alguém novo de qualquer parte do mundo.\n\n• 🌍 Correspondência por idioma\n• ❤️ Reações durante a chamada\n• ⭐ Premium com filtro de gênero\n• 🚩 Sistema de moderação`,
-        button: "🎲 Abrir Spinny",
+        text: (name) => `Olá, ${name}!\n\n*Spinny* é um videochat aleatório direto no Telegram.\n\nToque no botão abaixo, permita o acesso à câmera — e em segundos você estará conectado com alguém novo de qualquer parte do mundo.\n\n• Correspondência por idioma\n• Reações durante a chamada\n• Premium com filtro de gênero\n• Sistema de moderação`,
+        button: "Abrir Spinny",
       },
       ko: {
-        text: (name) => `👋 안녕하세요, ${name}님!\n\n🎲 *Spinny*는 텔레그램 안에서 바로 이용하는 랜덤 영상 채팅입니다.\n\n아래 버튼을 누르고 카메라 접근을 허용하면 몇 초 안에 전 세계 새로운 사람과 연결됩니다.\n\n• 🌍 언어별 매칭\n• ❤️ 통화 중 리액션\n• ⭐ 성별 필터가 있는 프리미엄\n• 🚩 모더레이션 시스템`,
-        button: "🎲 Spinny 열기",
+        text: (name) => `안녕하세요, ${name}님!\n\n*Spinny*는 텔레그램 안에서 바로 이용하는 랜덤 영상 채팅입니다.\n\n아래 버튼을 누르고 카메라 접근을 허용하면 몇 초 안에 전 세계 새로운 사람과 연결됩니다.\n\n• 언어별 매칭\n• 통화 중 리액션\n• 성별 필터가 있는 프리미엄\n• 모더레이션 시스템`,
+        button: "Spinny 열기",
       },
       id: {
-        text: (name) => `👋 Hai, ${name}!\n\n🎲 *Spinny* adalah video chat acak langsung di Telegram.\n\nTekan tombol di bawah, izinkan akses kamera — dan dalam hitungan detik kamu akan terhubung dengan orang baru dari seluruh dunia.\n\n• 🌍 Pencocokan berdasarkan bahasa\n• ❤️ Reaksi selama panggilan\n• ⭐ Premium dengan filter gender\n• 🚩 Sistem moderasi`,
-        button: "🎲 Buka Spinny",
+        text: (name) => `Hai, ${name}!\n\n*Spinny* adalah video chat acak langsung di Telegram.\n\nTekan tombol di bawah, izinkan akses kamera — dan dalam hitungan detik kamu akan terhubung dengan orang baru dari seluruh dunia.\n\n• Pencocokan berdasarkan bahasa\n• Reaksi selama panggilan\n• Premium dengan filter gender\n• Sistem moderasi`,
+        button: "Buka Spinny",
       },
       uk: {
-        text: (name) => `👋 Привіт, ${name}!\n\n🎲 *Spinny* — випадковий відеочат прямо в Telegram.\n\nНатисни кнопку нижче, дозволь доступ до камери — і за кілька секунд опинишся на зв'язку з новим співрозмовником з будь-якої точки світу.\n\n• 🌍 Підбір за мовою\n• ❤️ Реакції під час дзвінка\n• ⭐ Premium з фільтром за статтю\n• 🚩 Система модерації`,
-        button: "🎲 Відкрити Spinny",
+        text: (name) => `Привіт, ${name}!\n\n*Spinny* — випадковий відеочат прямо в Telegram.\n\nНатисни кнопку нижче, дозволь доступ до камери — і за кілька секунд опинишся на зв'язку з новим співрозмовником з будь-якої точки світу.\n\n• Підбір за мовою\n• Реакції під час дзвінка\n• Premium з фільтром за статтю\n• Система модерації`,
+        button: "Відкрити Spinny",
       },
       pl: {
-        text: (name) => `👋 Cześć, ${name}!\n\n🎲 *Spinny* to losowy wideoczat prosto w Telegramie.\n\nNaciśnij przycisk poniżej, zezwól na dostęp do kamery — a w kilka sekund połączysz się z nową osobą z dowolnego miejsca na świecie.\n\n• 🌍 Dopasowanie według języka\n• ❤️ Reakcje podczas rozmowy\n• ⭐ Premium z filtrem płci\n• 🚩 System moderacji`,
-        button: "🎲 Otwórz Spinny",
+        text: (name) => `Cześć, ${name}!\n\n*Spinny* to losowy wideoczat prosto w Telegramie.\n\nNaciśnij przycisk poniżej, zezwól na dostęp do kamery — a w kilka sekund połączysz się z nową osobą z dowolnego miejsca na świecie.\n\n• Dopasowanie według języka\n• Reakcje podczas rozmowy\n• Premium z filtrem płci\n• System moderacji`,
+        button: "Otwórz Spinny",
       },
       nl: {
-        text: (name) => `👋 Hoi, ${name}!\n\n🎲 *Spinny* is een willekeurige videochat rechtstreeks in Telegram.\n\nTik op de knop hieronder, geef cameratoegang — en binnen enkele seconden ben je verbonden met iemand nieuws van waar dan ook ter wereld.\n\n• 🌍 Matching op taal\n• ❤️ Reacties tijdens het gesprek\n• ⭐ Premium met genderfilter\n• 🚩 Moderatiesysteem`,
-        button: "🎲 Spinny openen",
+        text: (name) => `Hoi, ${name}!\n\n*Spinny* is een willekeurige videochat rechtstreeks in Telegram.\n\nTik op de knop hieronder, geef cameratoegang — en binnen enkele seconden ben je verbonden met iemand nieuws van waar dan ook ter wereld.\n\n• Matching op taal\n• Reacties tijdens het gesprek\n• Premium met genderfilter\n• Moderatiesysteem`,
+        button: "Spinny openen",
       },
       fa: {
-        text: (name) => `👋 سلام ${name}!\n\n🎲 *Spinny* یک ویدیوچت تصادفی مستقیماً در تلگرام است.\n\nروی دکمه زیر بزن، دسترسی به دوربین را مجاز کن — و در چند ثانیه با فردی جدید از هر نقطه جهان در ارتباط خواهی بود.\n\n• 🌍 تطبیق بر اساس زبان\n• ❤️ واکنش‌ها در حین تماس\n• ⭐ پرمیوم با فیلتر جنسیت\n• 🚩 سیستم نظارت`,
-        button: "🎲 باز کردن Spinny",
+        text: (name) => `سلام ${name}!\n\n*Spinny* یک ویدیوچت تصادفی مستقیماً در تلگرام است.\n\nروی دکمه زیر بزن، دسترسی به دوربین را مجاز کن — و در چند ثانیه با فردی جدید از هر نقطه جهان در ارتباط خواهی بود.\n\n• تطبیق بر اساس زبان\n• واکنش‌ها در حین تماس\n• پرمیوم با فیلتر جنسیت\n• سیستم نظارت`,
+        button: "باز کردن Spinny",
       },
       th: {
-        text: (name) => `👋 สวัสดี ${name}!\n\n🎲 *Spinny* คือวิดีโอแชทแบบสุ่มโดยตรงใน Telegram\n\nแตะปุ่มด้านล่าง อนุญาตให้เข้าถึงกล้อง — และในไม่กี่วินาทีคุณจะได้เชื่อมต่อกับคนใหม่จากทั่วโลก\n\n• 🌍 จับคู่ตามภาษา\n• ❤️ รีแอคชันระหว่างการโทร\n• ⭐ Premium พร้อมตัวกรองเพศ\n• 🚩 ระบบตรวจสอบ`,
-        button: "🎲 เปิด Spinny",
+        text: (name) => `สวัสดี ${name}!\n\n*Spinny* คือวิดีโอแชทแบบสุ่มโดยตรงใน Telegram\n\nแตะปุ่มด้านล่าง อนุญาตให้เข้าถึงกล้อง — และในไม่กี่วินาทีคุณจะได้เชื่อมต่อกับคนใหม่จากทั่วโลก\n\n• จับคู่ตามภาษา\n• รีแอคชันระหว่างการโทร\n• Premium พร้อมตัวกรองเพศ\n• ระบบตรวจสอบ`,
+        button: "เปิด Spinny",
       },
       vi: {
-        text: (name) => `👋 Chào ${name}!\n\n🎲 *Spinny* là video chat ngẫu nhiên ngay trong Telegram.\n\nNhấn nút bên dưới, cho phép truy cập camera — và chỉ trong vài giây bạn sẽ kết nối với người mới từ khắp nơi trên thế giới.\n\n• 🌍 Ghép đôi theo ngôn ngữ\n• ❤️ Biểu cảm trong cuộc gọi\n• ⭐ Premium với bộ lọc giới tính\n• 🚩 Hệ thống kiểm duyệt`,
-        button: "🎲 Mở Spinny",
+        text: (name) => `Chào ${name}!\n\n*Spinny* là video chat ngẫu nhiên ngay trong Telegram.\n\nNhấn nút bên dưới, cho phép truy cập camera — và chỉ trong vài giây bạn sẽ kết nối với người mới từ khắp nơi trên thế giới.\n\n• Ghép đôi theo ngôn ngữ\n• Biểu cảm trong cuộc gọi\n• Premium với bộ lọc giới tính\n• Hệ thống kiểm duyệt`,
+        button: "Mở Spinny",
       },
       ms: {
-        text: (name) => `👋 Hai, ${name}!\n\n🎲 *Spinny* ialah video chat rawak terus dalam Telegram.\n\nTekan butang di bawah, benarkan akses kamera — dan dalam beberapa saat anda akan berhubung dengan seseorang baharu dari mana-mana pelosok dunia.\n\n• 🌍 Padanan mengikut bahasa\n• ❤️ Reaksi semasa panggilan\n• ⭐ Premium dengan penapis jantina\n• 🚩 Sistem moderasi`,
-        button: "🎲 Buka Spinny",
+        text: (name) => `Hai, ${name}!\n\n*Spinny* ialah video chat rawak terus dalam Telegram.\n\nTekan butang di bawah, benarkan akses kamera — dan dalam beberapa saat anda akan berhubung dengan seseorang baharu dari mana-mana pelosok dunia.\n\n• Padanan mengikut bahasa\n• Reaksi semasa panggilan\n• Premium dengan penapis jantina\n• Sistem moderasi`,
+        button: "Buka Spinny",
       },
       bn: {
-        text: (name) => `👋 হ্যালো, ${name}!\n\n🎲 *Spinny* হলো টেলিগ্রামের মধ্যেই একটি র‌্যান্ডম ভিডিও চ্যাট।\n\nনিচের বোতামে চাপুন, ক্যামেরা অ্যাক্সেসের অনুমতি দিন — আর কয়েক সেকেন্ডের মধ্যে বিশ্বের যেকোনো প্রান্তের নতুন কারো সাথে যুক্ত হয়ে যাবেন।\n\n• 🌍 ভাষা অনুযায়ী মিলকরণ\n• ❤️ কলের সময় রিয়্যাকশন\n• ⭐ জেন্ডার ফিল্টার সহ প্রিমিয়াম\n• 🚩 মডারেশন সিস্টেম`,
-        button: "🎲 Spinny খুলুন",
+        text: (name) => `হ্যালো, ${name}!\n\n*Spinny* হলো টেলিগ্রামের মধ্যেই একটি র‌্যান্ডম ভিডিও চ্যাট।\n\nনিচের বোতামে চাপুন, ক্যামেরা অ্যাক্সেসের অনুমতি দিন — আর কয়েক সেকেন্ডের মধ্যে বিশ্বের যেকোনো প্রান্তের নতুন কারো সাথে যুক্ত হয়ে যাবেন।\n\n• ভাষা অনুযায়ী মিলকরণ\n• কলের সময় রিয়্যাকশন\n• জেন্ডার ফিল্টার সহ প্রিমিয়াম\n• মডারেশন সিস্টেম`,
+        button: "Spinny খুলুন",
       },
       ro: {
-        text: (name) => `👋 Salut, ${name}!\n\n🎲 *Spinny* este un videochat aleatoriu direct în Telegram.\n\nApasă butonul de mai jos, permite accesul la cameră — și în câteva secunde vei fi conectat cu cineva nou din orice colț al lumii.\n\n• 🌍 Potrivire după limbă\n• ❤️ Reacții în timpul apelului\n• ⭐ Premium cu filtru de gen\n• 🚩 Sistem de moderare`,
-        button: "🎲 Deschide Spinny",
+        text: (name) => `Salut, ${name}!\n\n*Spinny* este un videochat aleatoriu direct în Telegram.\n\nApasă butonul de mai jos, permite accesul la cameră — și în câteva secunde vei fi conectat cu cineva nou din orice colț al lumii.\n\n• Potrivire după limbă\n• Reacții în timpul apelului\n• Premium cu filtru de gen\n• Sistem de moderare`,
+        button: "Deschide Spinny",
       },
       el: {
-        text: (name) => `👋 Γεια σου, ${name}!\n\n🎲 Το *Spinny* είναι ένα τυχαίο βιντεοτσάτ απευθείας μέσα στο Telegram.\n\nΠάτησε το κουμπί παρακάτω, επίτρεψε την πρόσβαση στην κάμερα — και σε λίγα δευτερόλεπτα θα συνδεθείς με κάποιον νέο από οποιοδήποτε σημείο του κόσμου.\n\n• 🌍 Αντιστοίχιση βάσει γλώσσας\n• ❤️ Αντιδράσεις κατά τη διάρκεια της κλήσης\n• ⭐ Premium με φίλτρο φύλου\n• 🚩 Σύστημα συντονισμού`,
-        button: "🎲 Άνοιγμα Spinny",
+        text: (name) => `Γεια σου, ${name}!\n\nΤο *Spinny* είναι ένα τυχαίο βιντεοτσάτ απευθείας μέσα στο Telegram.\n\nΠάτησε το κουμπί παρακάτω, επίτρεψε την πρόσβαση στην κάμερα — και σε λίγα δευτερόλεπτα θα συνδεθείς με κάποιον νέο από οποιοδήποτε σημείο του κόσμου.\n\n• Αντιστοίχιση βάσει γλώσσας\n• Αντιδράσεις κατά τη διάρκεια της κλήσης\n• Premium με φίλτρο φύλου\n• Σύστημα συντονισμού`,
+        button: "Άνοιγμα Spinny",
       },
       cs: {
-        text: (name) => `👋 Ahoj, ${name}!\n\n🎲 *Spinny* je náhodný videochat přímo v Telegramu.\n\nKlepni na tlačítko níže, povol přístup ke kameře — a během pár vteřin se spojíš s novým člověkem odkudkoli na světě.\n\n• 🌍 Párování podle jazyka\n• ❤️ Reakce během hovoru\n• ⭐ Premium s filtrem pohlaví\n• 🚩 Systém moderace`,
-        button: "🎲 Otevřít Spinny",
+        text: (name) => `Ahoj, ${name}!\n\n*Spinny* je náhodný videochat přímo v Telegramu.\n\nKlepni na tlačítko níže, povol přístup ke kameře — a během pár vteřin se spojíš s novým člověkem odkudkoli na světě.\n\n• Párování podle jazyka\n• Reakce během hovoru\n• Premium s filtrem pohlaví\n• Systém moderace`,
+        button: "Otevřít Spinny",
       },
       sv: {
-        text: (name) => `👋 Hej, ${name}!\n\n🎲 *Spinny* är en slumpmässig videochatt direkt i Telegram.\n\nTryck på knappen nedan, tillåt kameraåtkomst — och på några sekunder är du kopplad till någon ny från vilken plats som helst i världen.\n\n• 🌍 Matchning efter språk\n• ❤️ Reaktioner under samtalet\n• ⭐ Premium med könsfilter\n• 🚩 Modereringssystem`,
-        button: "🎲 Öppna Spinny",
+        text: (name) => `Hej, ${name}!\n\n*Spinny* är en slumpmässig videochatt direkt i Telegram.\n\nTryck på knappen nedan, tillåt kameraåtkomst — och på några sekunder är du kopplad till någon ny från vilken plats som helst i världen.\n\n• Matchning efter språk\n• Reaktioner under samtalet\n• Premium med könsfilter\n• Modereringssystem`,
+        button: "Öppna Spinny",
       },
       fi: {
-        text: (name) => `👋 Hei, ${name}!\n\n🎲 *Spinny* on satunnainen videochat suoraan Telegramissa.\n\nPaina alla olevaa painiketta, salli kameran käyttö — ja muutamassa sekunnissa olet yhteydessä uuteen ihmiseen mistä tahansa päin maailmaa.\n\n• 🌍 Kielen mukainen yhdistäminen\n• ❤️ Reaktiot puhelun aikana\n• ⭐ Premium sukupuolisuodattimella\n• 🚩 Moderointijärjestelmä`,
-        button: "🎲 Avaa Spinny",
+        text: (name) => `Hei, ${name}!\n\n*Spinny* on satunnainen videochat suoraan Telegramissa.\n\nPaina alla olevaa painiketta, salli kameran käyttö — ja muutamassa sekunnissa olet yhteydessä uuteen ihmiseen mistä tahansa päin maailmaa.\n\n• Kielen mukainen yhdistäminen\n• Reaktiot puhelun aikana\n• Premium sukupuolisuodattimella\n• Moderointijärjestelmä`,
+        button: "Avaa Spinny",
       },
       da: {
-        text: (name) => `👋 Hej, ${name}!\n\n🎲 *Spinny* er en tilfældig videochat direkte i Telegram.\n\nTryk på knappen nedenfor, giv adgang til kameraet — og om få sekunder er du forbundet med en ny person fra hele verden.\n\n• 🌍 Matchning efter sprog\n• ❤️ Reaktioner under opkaldet\n• ⭐ Premium med kønsfilter\n• 🚩 Moderationssystem`,
-        button: "🎲 Åbn Spinny",
+        text: (name) => `Hej, ${name}!\n\n*Spinny* er en tilfældig videochat direkte i Telegram.\n\nTryk på knappen nedenfor, giv adgang til kameraet — og om få sekunder er du forbundet med en ny person fra hele verden.\n\n• Matchning efter sprog\n• Reaktioner under opkaldet\n• Premium med kønsfilter\n• Moderationssystem`,
+        button: "Åbn Spinny",
       },
       no: {
-        text: (name) => `👋 Hei, ${name}!\n\n🎲 *Spinny* er en tilfeldig videochat rett i Telegram.\n\nTrykk på knappen nedenfor, gi tilgang til kameraet — og om noen sekunder er du koblet til en ny person fra hvor som helst i verden.\n\n• 🌍 Matching etter språk\n• ❤️ Reaksjoner under samtalen\n• ⭐ Premium med kjønnsfilter\n• 🚩 Modereringssystem`,
-        button: "🎲 Åpne Spinny",
+        text: (name) => `Hei, ${name}!\n\n*Spinny* er en tilfeldig videochat rett i Telegram.\n\nTrykk på knappen nedenfor, gi tilgang til kameraet — og om noen sekunder er du koblet til en ny person fra hvor som helst i verden.\n\n• Matching etter språk\n• Reaksjoner under samtalen\n• Premium med kjønnsfilter\n• Modereringssystem`,
+        button: "Åpne Spinny",
       },
       hu: {
-        text: (name) => `👋 Szia, ${name}!\n\n🎲 A *Spinny* egy véletlenszerű videocsevegés közvetlenül a Telegramban.\n\nÉrintsd meg az alábbi gombot, engedélyezd a kamera hozzáférést — és pár másodperc múlva már beszélgethetsz valakivel a világ bármely pontjáról.\n\n• 🌍 Párosítás nyelv szerint\n• ❤️ Reakciók hívás közben\n• ⭐ Premium nemi szűrővel\n• 🚩 Moderációs rendszer`,
-        button: "🎲 Spinny megnyitása",
+        text: (name) => `Szia, ${name}!\n\nA *Spinny* egy véletlenszerű videocsevegés közvetlenül a Telegramban.\n\nÉrintsd meg az alábbi gombot, engedélyezd a kamera hozzáférést — és pár másodperc múlva már beszélgethetsz valakivel a világ bármely pontjáról.\n\n• Párosítás nyelv szerint\n• Reakciók hívás közben\n• Premium nemi szűrővel\n• Moderációs rendszer`,
+        button: "Spinny megnyitása",
       },
       he: {
-        text: (name) => `👋 היי, ${name}!\n\n🎲 *Spinny* הוא צ'אט וידאו אקראי ישירות בטלגרם.\n\nלחץ על הכפתור למטה, אשר גישה למצלמה — ותוך שניות תתחבר לאדם חדש מכל מקום בעולם.\n\n• 🌍 התאמה לפי שפה\n• ❤️ ריאקציות במהלך השיחה\n• ⭐ פרימיום עם סינון לפי מגדר\n• 🚩 מערכת מודרציה`,
-        button: "🎲 פתח את Spinny",
+        text: (name) => `היי, ${name}!\n\n*Spinny* הוא צ'אט וידאו אקראי ישירות בטלגרם.\n\nלחץ על הכפתור למטה, אשר גישה למצלמה — ותוך שניות תתחבר לאדם חדש מכל מקום בעולם.\n\n• התאמה לפי שפה\n• ריאקציות במהלך השיחה\n• פרימיום עם סינון לפי מגדר\n• מערכת מודרציה`,
+        button: "פתח את Spinny",
       },
       az: {
-        text: (name) => `👋 Salam, ${name}!\n\n🎲 *Spinny* birbaşa Telegramda təsadüfi video çatdır.\n\nAşağıdakı düyməyə bas, kameraya girişə icazə ver — bir neçə saniyə ərzində dünyanın istənilən nöqtəsindən yeni biri ilə əlaqədə olacaqsan.\n\n• 🌍 Dilə görə uyğunlaşdırma\n• ❤️ Zəng zamanı reaksiyalar\n• ⭐ Cins filtrli Premium\n• 🚩 Moderasiya sistemi`,
-        button: "🎲 Spinny-ni aç",
+        text: (name) => `Salam, ${name}!\n\n*Spinny* birbaşa Telegramda təsadüfi video çatdır.\n\nAşağıdakı düyməyə bas, kameraya girişə icazə ver — bir neçə saniyə ərzində dünyanın istənilən nöqtəsindən yeni biri ilə əlaqədə olacaqsan.\n\n• Dilə görə uyğunlaşdırma\n• Zəng zamanı reaksiyalar\n• Cins filtrli Premium\n• Moderasiya sistemi`,
+        button: "Spinny-ni aç",
       },
       kk: {
-        text: (name) => `👋 Сәлем, ${name}!\n\n🎲 *Spinny* — Telegram ішінде тікелей кездейсоқ бейне чат.\n\nТөмендегі түймені бас, камераға қатынасуға рұқсат бер — бірнеше секундтан кейін әлемнің кез келген нүктесінен жаңа адаммен байланыста боласың.\n\n• 🌍 Тіл бойынша сәйкестендіру\n• ❤️ Қоңырау кезіндегі реакциялар\n• ⭐ Жыныс сүзгісі бар Premium\n• 🚩 Модерация жүйесі`,
-        button: "🎲 Spinny ашу",
+        text: (name) => `Сәлем, ${name}!\n\n*Spinny* — Telegram ішінде тікелей кездейсоқ бейне чат.\n\nТөмендегі түймені бас, камераға қатынасуға рұқсат бер — бірнеше секундтан кейін әлемнің кез келген нүктесінен жаңа адаммен байланыста боласың.\n\n• Тіл бойынша сәйкестендіру\n• Қоңырау кезіндегі реакциялар\n• Жыныс сүзгісі бар Premium\n• Модерация жүйесі`,
+        button: "Spinny ашу",
       },
       uz: {
-        text: (name) => `👋 Salom, ${name}!\n\n🎲 *Spinny* — bu Telegram ichida to'g'ridan-to'g'ri tasodifiy video chat.\n\nPastdagi tugmani bosing, kameraga ruxsat bering — va bir necha soniyada dunyoning istalgan nuqtasidan yangi odam bilan bog'lanasiz.\n\n• 🌍 Til bo'yicha moslashtirish\n• ❤️ Qo'ng'iroq davomidagi reaksiyalar\n• ⭐ Jins filtri bilan Premium\n• 🚩 Moderatsiya tizimi`,
-        button: "🎲 Spinny-ni ochish",
+        text: (name) => `Salom, ${name}!\n\n*Spinny* — bu Telegram ichida to'g'ridan-to'g'ri tasodifiy video chat.\n\nPastdagi tugmani bosing, kameraga ruxsat bering — va bir necha soniyada dunyoning istalgan nuqtasidan yangi odam bilan bog'lanasiz.\n\n• Til bo'yicha moslashtirish\n• Qo'ng'iroq davomidagi reaksiyalar\n• Jins filtri bilan Premium\n• Moderatsiya tizimi`,
+        button: "Spinny-ni ochish",
       },
     };
 
@@ -724,7 +749,7 @@ app.post("/tg-webhook", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: userId,
-        photo: "https://spinnyapp.ru/spinny_logo.png?v=3",
+        photo: "https://spinnyapp.ru/spinny_logo.png?v=4",
         caption: g.text(firstName),
         parse_mode: "Markdown",
         reply_markup: {
@@ -2041,9 +2066,71 @@ io.on("connection", (socket) => {
       // Отправляем клиенту его статус (премиум, пол) чтобы показать правильный UI
       const userPremium = await isPremium(user.id);
       const userGender = await getGender(user.id);
-      socket.emit("user-status", { premium: userPremium, gender: userGender });
+      const refRes = await db.query(`SELECT referral_balance FROM users WHERE telegram_id = $1`, [user.id]);
+      const referralBalance = refRes.rows[0]?.referral_balance || 0;
+      socket.emit("user-status", { premium: userPremium, gender: userGender, referralBalance });
     } catch (e) {
       console.error("[auth] ошибка БД:", e.message);
+    }
+  });
+
+  const REDEEM_COST_BONUSES = 50; // сколько бонусов стоит обмен
+  const REDEEM_PREMIUM_DAYS = 7;  // сколько дней Premium дают за обмен
+
+  socket.on("redeem-referral-balance", async () => {
+    if (isRateLimited(socket.id, "redeem-referral-balance", 3, 10000)) return;
+    const user = telegramUserOf.get(socket.id);
+    if (!db || !user) return;
+    try {
+      const res = await db.query(
+        `UPDATE users SET referral_balance = referral_balance - $1
+         WHERE telegram_id = $2 AND referral_balance >= $1
+         RETURNING referral_balance`,
+        [REDEEM_COST_BONUSES, user.id]
+      );
+      if (res.rowCount === 0) {
+        socket.emit("error-msg", `Недостаточно бонусов — нужно ${REDEEM_COST_BONUSES}, приведите ещё друзей`);
+        return;
+      }
+      await grantPremium(user.id, REDEEM_PREMIUM_DAYS);
+      const userPremium = await isPremium(user.id);
+      socket.emit("user-status", { premium: userPremium, referralBalance: res.rows[0].referral_balance });
+      socket.emit("error-msg", `🎉 Обменяли бонусы на ${REDEEM_PREMIUM_DAYS} дней Premium!`);
+      console.log("[referral]", user.id, "обменял бонусы на Premium");
+    } catch (e) {
+      console.error("[redeem-referral-balance] ошибка:", e.message);
+    }
+  });
+
+  // Обмен бонусов на настоящие звёзды-подарок (требует настроенного giftSender —
+  // если раздающий аккаунт не подключён, тихо откажет с понятной ошибкой)
+  socket.on("redeem-referral-stars", async () => {
+    if (isRateLimited(socket.id, "redeem-referral-stars", 3, 15000)) return;
+    const user = telegramUserOf.get(socket.id);
+    if (!db || !user) return;
+    if (!giftSender.isConfigured()) {
+      socket.emit("error-msg", "Обмен на звёзды временно недоступен");
+      return;
+    }
+    try {
+      const balRes = await db.query(`SELECT referral_balance FROM users WHERE telegram_id = $1`, [user.id]);
+      const balance = balRes.rows[0]?.referral_balance || 0;
+      if (balance < 15) {
+        socket.emit("error-msg", `Недостаточно бонусов для обмена на звёзды (минимум 15), у вас ${balance}`);
+        return;
+      }
+
+      const gift = await giftSender.sendStarGiftToUser(user.id, balance);
+      const res = await db.query(
+        `UPDATE users SET referral_balance = referral_balance - $1 WHERE telegram_id = $2 RETURNING referral_balance`,
+        [gift.starsSpent, user.id]
+      );
+      socket.emit("user-status", { referralBalance: res.rows[0].referral_balance });
+      socket.emit("error-msg", `🎁 Отправили подарок на ${gift.starsSpent} звёзд! Загляните в чат с ботом.`);
+      console.log("[referral]", user.id, "обменял", gift.starsSpent, "бонусов на звёзды-подарок");
+    } catch (e) {
+      console.error("[redeem-referral-stars] ошибка:", e.message);
+      socket.emit("error-msg", "Не получилось отправить подарок — попробуйте позже");
     }
   });
 
