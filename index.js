@@ -4,7 +4,6 @@ const path = require("path");
 const crypto = require("crypto");
 const { Pool } = require("pg");
 const { Server } = require("socket.io");
-const giftSender = require("./giftSender");
 
 console.log("[env] BOT_TOKEN:", process.env.TELEGRAM_BOT_TOKEN ? "SET" : "NOT SET");
 console.log("[env] DATABASE_URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
@@ -2099,38 +2098,6 @@ io.on("connection", (socket) => {
       console.log("[referral]", user.id, "обменял бонусы на Premium");
     } catch (e) {
       console.error("[redeem-referral-balance] ошибка:", e.message);
-    }
-  });
-
-  // Обмен бонусов на настоящие звёзды-подарок (требует настроенного giftSender —
-  // если раздающий аккаунт не подключён, тихо откажет с понятной ошибкой)
-  socket.on("redeem-referral-stars", async () => {
-    if (isRateLimited(socket.id, "redeem-referral-stars", 3, 15000)) return;
-    const user = telegramUserOf.get(socket.id);
-    if (!db || !user) return;
-    if (!giftSender.isConfigured()) {
-      socket.emit("error-msg", "Обмен на звёзды временно недоступен");
-      return;
-    }
-    try {
-      const balRes = await db.query(`SELECT referral_balance FROM users WHERE telegram_id = $1`, [user.id]);
-      const balance = balRes.rows[0]?.referral_balance || 0;
-      if (balance < 15) {
-        socket.emit("error-msg", `Недостаточно бонусов для обмена на звёзды (минимум 15), у вас ${balance}`);
-        return;
-      }
-
-      const gift = await giftSender.sendStarGiftToUser(user.id, balance);
-      const res = await db.query(
-        `UPDATE users SET referral_balance = referral_balance - $1 WHERE telegram_id = $2 RETURNING referral_balance`,
-        [gift.starsSpent, user.id]
-      );
-      socket.emit("user-status", { referralBalance: res.rows[0].referral_balance });
-      socket.emit("error-msg", `🎁 Отправили подарок на ${gift.starsSpent} звёзд! Загляните в чат с ботом.`);
-      console.log("[referral]", user.id, "обменял", gift.starsSpent, "бонусов на звёзды-подарок");
-    } catch (e) {
-      console.error("[redeem-referral-stars] ошибка:", e.message);
-      socket.emit("error-msg", "Не получилось отправить подарок — попробуйте позже");
     }
   });
 
