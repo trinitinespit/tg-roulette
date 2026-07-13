@@ -2722,4 +2722,4 @@ initDb().catch(e => {
   } catch (e) {
     console.warn("[menu_button] не удалось обновить:", e.message);
   }
-})();
+})();Mon Jul 13 11:18:19 MSK 2026
