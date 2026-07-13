@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const crypto = require("crypto");
+const fs = require("fs");
 const { Pool } = require("pg");
 const { Server } = require("socket.io");
 
@@ -744,23 +745,23 @@ app.post("/tg-webhook", async (req, res) => {
     const g = GREETINGS[langCode] || GREETINGS.ru;
 
     try {
+      const logoPath = path.join(__dirname, "public", "spinny_logo.png");
+      const form = new FormData();
+      form.append("chat_id", String(userId));
+      form.append("caption", g.text(firstName));
+      form.append("parse_mode", "Markdown");
+      form.append("reply_markup", JSON.stringify({
+        inline_keyboard: [[
+          { text: g.button, web_app: { url: "https://spinnyapp.ru" } }
+        ]]
+      }));
+      // Грузим файл напрямую с диска, а не ссылкой — так Telegram не зависит
+      // от того, как прокси Amvera отдаёт заголовки для статики
+      form.append("photo", new Blob([fs.readFileSync(logoPath)]), "spinny_logo.png");
+
       const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: userId,
-          photo: "https://spinnyapp.ru/spinny_logo.png?v=4",
-          caption: g.text(firstName),
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [[
-              {
-                text: g.button,
-                web_app: { url: "https://spinnyapp.ru" }
-              }
-            ]]
-          }
-        }),
+        body: form,
       });
       const respJson = await resp.json();
       if (!respJson.ok) {
@@ -2722,4 +2723,4 @@ initDb().catch(e => {
   } catch (e) {
     console.warn("[menu_button] не удалось обновить:", e.message);
   }
-})();Mon Jul 13 11:18:19 MSK 2026
+})();
