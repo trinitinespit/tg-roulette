@@ -1386,46 +1386,39 @@ async function broadcastToAllNow() {
   }
 }
 
-let usersLoadedCount = 100; // первые 100 уже отрисованы сервером вместе со страницей
+let usersLoadedCount = 100; // сколько строк сейчас в таблице (для следующей подгрузки)
 
-const usersSortState = { key: null, dir: 1 }; // dir: 1 = по возрастанию, -1 = по убыванию
+const usersSortState = { key: 'lastSeen', dir: -1 }; // dir: 1 = по возрастанию, -1 = по убыванию
 
-function sortUsersTable(key) {
-  const tbody = document.getElementById('usersTableBody');
-  const rows = Array.from(tbody.querySelectorAll('tr'));
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s == null ? '' : String(s);
+  return div.innerHTML;
+}
 
-  // Повторный клик по тому же столбцу — меняем направление
-  if (usersSortState.key === key) {
-    usersSortState.dir *= -1;
-  } else {
-    usersSortState.key = key;
-    usersSortState.dir = 1;
-  }
+function buildUserRow(u) {
+  const tr = document.createElement('tr');
+  tr.setAttribute('data-id', u.telegram_id);
+  tr.setAttribute('data-premium', u.is_premium ? '1' : '0');
+  tr.setAttribute('data-gender', u.gender || '');
+  tr.setAttribute('data-source', u.source_param || 'органика');
+  tr.setAttribute('data-lastseen', new Date(u.last_seen_at).getTime());
+  const statusHtml = u.is_premium ? '<span class="premium-badge">⭐ Premium</span>' : 'Free';
+  const actionHtml = u.is_premium
+    ? '<button class="ban-btn" onclick="manualRevokePremium(' + u.telegram_id + ')">Забрать Premium</button>'
+    : '<button class="unban-btn" onclick="manualGrantPremium(' + u.telegram_id + ')">Выдать 30 дней</button>';
+  tr.innerHTML =
+    '<td>' + u.telegram_id + '</td>' +
+    '<td>' + escapeHtml(u.first_name || '') + ' @' + escapeHtml(u.username || '—') + '</td>' +
+    '<td>' + statusHtml + '</td>' +
+    '<td>' + escapeHtml(u.gender || '—') + '</td>' +
+    '<td style="font-size:12px;color:#64748b;">' + escapeHtml(u.source_param || 'органика') + '</td>' +
+    '<td>' + new Date(u.last_seen_at).toLocaleString('ru') + '</td>' +
+    '<td>' + actionHtml + ' <button class="ban-btn" onclick="manualBanFromUsers(' + u.telegram_id + ')">Забанить</button></td>';
+  return tr;
+}
 
-  const attrMap = {
-    id: 'data-id',
-    premium: 'data-premium',
-    gender: 'data-gender',
-    source: 'data-source',
-    lastSeen: 'data-lastseen',
-  };
-  const attr = attrMap[key];
-  const isNumeric = key === 'id' || key === 'premium' || key === 'lastSeen';
-
-  rows.sort((a, b) => {
-    let va = a.getAttribute(attr) || '';
-    let vb = b.getAttribute(attr) || '';
-    if (isNumeric) {
-      va = Number(va) || 0;
-      vb = Number(vb) || 0;
-      return (va - vb) * usersSortState.dir;
-    }
-    return va.localeCompare(vb, 'ru') * usersSortState.dir;
-  });
-
-  rows.forEach(r => tbody.appendChild(r));
-
-  // Визуальная подсказка направления сортировки в заголовках
+function updateSortHeaderIndicator(key) {
   document.querySelectorAll('#usersTable th.sortable').forEach(th => {
     th.classList.remove('sort-asc', 'sort-desc');
   });
@@ -1434,44 +1427,45 @@ function sortUsersTable(key) {
   if (th) th.classList.add(usersSortState.dir === 1 ? 'sort-asc' : 'sort-desc');
 }
 
-function escapeHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = s == null ? '' : String(s);
-  return div.innerHTML;
+// Кликнули по заголовку — сортируем НА СЕРВЕРЕ и перезапрашиваем список с
+// начала (офсет 0), а не тасуем то, что уже случайно подгружено на клиенте.
+// Иначе вторая "страница" сортировалась бы отдельно от первой — та самая
+// ошибка, которую поймали раньше.
+async function sortUsersTable(key) {
+  if (usersSortState.key === key) {
+    usersSortState.dir *= -1;
+  } else {
+    usersSortState.key = key;
+    usersSortState.dir = 1;
+  }
+  usersLoadedCount = 0;
+
+  const tbody = document.getElementById('usersTableBody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;">Загружаю...</td></tr>';
+
+  await loadMoreUsers(true);
+  updateSortHeaderIndicator(key);
 }
 
-async function loadMoreUsers() {
+async function loadMoreUsers(isReset) {
   const btn = document.getElementById('loadMoreUsersBtn');
   btn.disabled = true;
   btn.textContent = 'Загружаю...';
   try {
-    const r = await fetch('/admin/users-page?offset=' + usersLoadedCount, {
-      headers: { 'x-admin-secret': SECRET },
-    });
+    const sortDir = usersSortState.dir === 1 ? 'asc' : 'desc';
+    const r = await fetch(
+      '/admin/users-page?offset=' + usersLoadedCount +
+      '&sortKey=' + encodeURIComponent(usersSortState.key) +
+      '&sortDir=' + sortDir,
+      { headers: { 'x-admin-secret': SECRET } }
+    );
     const data = await r.json();
     if (!data.ok) throw new Error('сервер вернул ошибку');
 
     const tbody = document.getElementById('usersTableBody');
+    if (isReset) tbody.innerHTML = '';
     for (const u of data.users) {
-      const tr = document.createElement('tr');
-      tr.setAttribute('data-id', u.telegram_id);
-      tr.setAttribute('data-premium', u.is_premium ? '1' : '0');
-      tr.setAttribute('data-gender', u.gender || '');
-      tr.setAttribute('data-source', u.source_param || 'органика');
-      tr.setAttribute('data-lastseen', new Date(u.last_seen_at).getTime());
-      const statusHtml = u.is_premium ? '<span class="premium-badge">⭐ Premium</span>' : 'Free';
-      const actionHtml = u.is_premium
-        ? '<button class="ban-btn" onclick="manualRevokePremium(' + u.telegram_id + ')">Забрать Premium</button>'
-        : '<button class="unban-btn" onclick="manualGrantPremium(' + u.telegram_id + ')">Выдать 30 дней</button>';
-      tr.innerHTML =
-        '<td>' + u.telegram_id + '</td>' +
-        '<td>' + escapeHtml(u.first_name || '') + ' @' + escapeHtml(u.username || '—') + '</td>' +
-        '<td>' + statusHtml + '</td>' +
-        '<td>' + escapeHtml(u.gender || '—') + '</td>' +
-        '<td style="font-size:12px;color:#64748b;">' + escapeHtml(u.source_param || 'органика') + '</td>' +
-        '<td>' + new Date(u.last_seen_at).toLocaleString('ru') + '</td>' +
-        '<td>' + actionHtml + ' <button class="ban-btn" onclick="manualBanFromUsers(' + u.telegram_id + ')">Забанить</button></td>';
-      tbody.appendChild(tr);
+      tbody.appendChild(buildUserRow(u));
     }
 
     usersLoadedCount += data.users.length;
@@ -2881,12 +2875,24 @@ async function sendBroadcastToAll(customMessage) {
 
 // Постраничная подгрузка пользователей для админки (первые 100 уже пришли
 // с самой страницей, дальше — по клику "Загрузить ещё" через этот эндпоинт)
+// Белый список — какие ключи с клиента разрешены и на какую реальную колонку/выражение БД они мапятся.
+// Никогда не подставляем сырой ввод клиента прямо в ORDER BY — это была бы SQL-инъекция.
+const USERS_SORT_COLUMNS = {
+  id: "telegram_id",
+  premium: "is_premium",
+  gender: "gender",
+  source: "source_param",
+  lastSeen: "last_seen_at",
+};
+
 app.get("/admin/users-page", adminAuth, async (req, res) => {
   const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  const sortCol = USERS_SORT_COLUMNS[req.query.sortKey] || "last_seen_at";
+  const sortDir = req.query.sortDir === "asc" ? "ASC" : "DESC";
   try {
     const result = await db.query(
       `SELECT telegram_id, username, first_name, is_premium, premium_until, gender, last_seen_at, source_param
-       FROM users ORDER BY last_seen_at DESC LIMIT 100 OFFSET $1`,
+       FROM users ORDER BY ${sortCol} ${sortDir} NULLS LAST, telegram_id ASC LIMIT 100 OFFSET $1`,
       [offset]
     );
     res.json({ ok: true, users: result.rows, hasMore: result.rowCount === 100 });
