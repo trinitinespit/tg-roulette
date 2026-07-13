@@ -1024,7 +1024,7 @@ app.get("/admin", adminAuth, async (req, res) => {
   <div class="tab active" onclick="showTab('overview')">Обзор</div>
   <div class="tab" onclick="showTab('bans')">Баны (${bans.rowCount})</div>
   <div class="tab" onclick="showTab('reports')">Репорты (${reports.rowCount})</div>
-  <div class="tab" onclick="showTab('users')">Пользователи (${users.rowCount})</div>
+  <div class="tab" onclick="showTab('users')">Пользователи (${totalUsers.rows[0].cnt})</div>
   <div class="tab" onclick="showTab('unbans')">Разблокировки (${unban.rowCount})</div>
   <div class="tab" onclick="showTab('blocks')">Блоки (${blocks.rowCount})</div>
   <div class="tab" onclick="showTab('ads')">Реклама (${ads.rowCount})</div>
@@ -1089,6 +1089,15 @@ app.get("/admin", adminAuth, async (req, res) => {
 
   <!-- Пользователи -->
   <div class="section" id="tab-users">
+    <div class="panel-card" style="margin-bottom:20px;">
+      <div class="panel-title" style="margin-bottom:10px;">📢 Разослать всем сейчас</div>
+      <div style="font-size:13px;color:#94a3b8;margin-bottom:10px;">
+        Отправляет введённое сообщение всем пользователям сразу (не путать с автонапоминаниями по стадиям 48ч/7д/30д — эта рассылка ручная и одноразовая). Используйте, когда хотите собрать людей в одно время, например синхронно с запуском рекламы.
+      </div>
+      <textarea id="broadcastMessageInput" rows="3" style="width:100%;box-sizing:border-box;background:#0f172a;border:1px solid #334155;color:#fff;padding:10px 12px;border-radius:8px;font-size:14px;margin-bottom:10px;resize:vertical;">🎲 Сейчас в Spinny особенно много новых людей онлайн — самое время заглянуть!</textarea>
+      <button class="btn" style="background:#f59e0b;color:#000;font-weight:700;" onclick="broadcastToAllNow()">📢 Отправить всем прямо сейчас</button>
+    </div>
+
     <div class="panel-card" style="margin-bottom:20px;">
       <div class="panel-title" style="margin-bottom:10px;">🔗 Создать ссылку с меткой источника</div>
       <div class="action-row">
@@ -1331,6 +1340,33 @@ async function manualBanFromUsers(id) {
   });
   if (r.ok) { alert('Забанен'); location.reload(); }
   else alert('Ошибка: ' + await r.text());
+}
+
+async function broadcastToAllNow() {
+  const messageText = document.getElementById('broadcastMessageInput').value.trim();
+  if (!messageText) return alert('Введите текст сообщения');
+  if (!confirm('Разослать это сообщение ВСЕМ пользователям прямо сейчас?\n\n«' + messageText + '»\n\nЭто одноразовое действие, отменить рассылку после старта нельзя.')) return;
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Рассылаю...';
+  try {
+    const r = await fetch('/admin/broadcast-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': SECRET },
+      body: JSON.stringify({ message: messageText }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      alert('Рассылка запущена в фоне. Она может занять несколько минут в зависимости от числа пользователей — прогресс смотрите в логах сервера.');
+    } else {
+      alert('Ошибка запуска рассылки');
+    }
+  } catch (e) {
+    alert('Ошибка: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📢 Отправить всем прямо сейчас';
+  }
 }
 
 function generateSourceLink() {
@@ -2659,6 +2695,82 @@ const REMINDER_INTERVAL_MS = 60 * 60 * 1000;
 setInterval(() => {
   sendReminders().catch((e) => console.error("[reminders] необработанная ошибка:", e.message));
 }, REMINDER_INTERVAL_MS);
+
+// Единоразовая ручная рассылка ВСЕМ пользователям сразу — не завязана на
+// автоматические стадии 48ч/7д/30д, запускается вручную из админки, когда
+// нужно собрать людей одновременно (например, синхронно с запуском рекламы).
+const BROADCAST_MESSAGES = {
+  ru: { text: (name) => `🎲 ${name}, сейчас в Spinny особенно много новых людей онлайн — самое время заглянуть!`, button: "🎲 Открыть Spinny" },
+  en: { text: (name) => `🎲 ${name}, there are lots of new people on Spinny right now — perfect time to hop in!`, button: "🎲 Open Spinny" },
+};
+
+async function sendBroadcastToAll(customMessage) {
+  if (!db) return { sent: 0, failed: 0 };
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return { sent: 0, failed: 0 };
+
+  const candidates = await db.query(
+    `SELECT u.telegram_id, u.first_name, u.language_code
+     FROM users u
+     WHERE u.reminders_blocked = FALSE
+       AND NOT EXISTS (SELECT 1 FROM bans b WHERE b.telegram_id = u.telegram_id)`
+  );
+
+  let sent = 0, failed = 0;
+  for (const u of candidates.rows) {
+    const lang = (u.language_code || "ru").split("-")[0];
+    // Если админ ввёл своё сообщение — используем его как есть (одна и та же
+    // формулировка всем, без перевода). Если поле пустое — берём дефолтный
+    // текст на языке пользователя, как раньше.
+    const text = customMessage || (BROADCAST_MESSAGES[lang] || BROADCAST_MESSAGES.ru).text(u.first_name || "друг");
+    const buttonText = (BROADCAST_MESSAGES[lang] || BROADCAST_MESSAGES.ru).button;
+
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: u.telegram_id,
+          text,
+          reply_markup: {
+            inline_keyboard: [[{ text: buttonText, web_app: { url: "https://spinnyapp.ru" } }]]
+          }
+        }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        sent++;
+      } else {
+        failed++;
+        if (data.error_code === 403 || /blocked/i.test(data.description || "")) {
+          await db.query("UPDATE users SET reminders_blocked = TRUE WHERE telegram_id = $1", [u.telegram_id]);
+        }
+      }
+    } catch (e) {
+      failed++;
+      console.error("[broadcast] ошибка отправки", u.telegram_id, ":", e.message);
+    }
+
+    // Пауза между сообщениями, чтобы не упереться в rate limit Telegram
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  console.log(`[broadcast] рассылка завершена: отправлено ${sent}, ошибок ${failed}`);
+  return { sent, failed };
+}
+
+app.post("/admin/broadcast-now", adminAuth, async (req, res) => {
+  const customMessage = typeof req.body?.message === "string" ? req.body.message.trim().slice(0, 4000) : null;
+  // Отвечаем сразу — рассылка на 147+ человек с паузами между сообщениями
+  // может занять больше времени, чем таймаут HTTP-запроса в браузере
+  res.json({ ok: true, started: true });
+  try {
+    const result = await sendBroadcastToAll(customMessage);
+    console.log("[admin] ручная рассылка всем завершена:", result);
+  } catch (e) {
+    console.error("[admin] ошибка ручной рассылки:", e.message);
+  }
+});
 
 // Автоматически гасим рекламу, у которой истёк оплаченный срок размещения (AD_SLOT_DAYS)
 async function expireOldAds() {
